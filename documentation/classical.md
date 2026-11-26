@@ -143,7 +143,7 @@ certificate that a plain Mathlib checks, with no model call, in this order, befo
 | Method (try name) | Fragment | What is computed, and where | The Lean text |
 |---|---|---|---|
 | (a) modular obstruction (`cert.modular`) | an equation over `ℤ` or `ℕ`: a hypothesis, or the conclusion's `≠`, `¬ (a = b)` or `¬ ∃ xs, a = b` | the moduli `m ≤ maxModulus` (default 64, at most 4096 residue tuples) where the equation has no solution, in TypeScript; the two with the fewest tuples | `have h := congrArg (Int.cast : ℤ → ZMod m) h₀`, `push_cast at h`, `revert h`, `generalize (x : ZMod m) = r` per variable, `revert r ...`, `decide` (`exfalso` first when the conclusion is not `False`) |
-| (b) local polyrith (`cert.polyrith`) | an equation over `ℤ`, `ℚ`, `ℝ` or `ℂ` and at least one equation hypothesis, at most 6 variables | in the compute tool: sympy's Gröbner basis says whether the conclusion lies in the ideal of the hypotheses, then an ansatz of growing degree (up to 2 above the goal's) solved exactly over `Fraction` gives cofactors | `linear_combination (c₁) * h₁ + (c₂) * h₂`; over `ℤ` only integer cofactors (the program then tries small integers, -2 to 2, for up to three free unknowns of a solution with denominators, and the next degree, before giving up) |
+| (b) local polyrith (`cert.polyrith`) | an equation over `ℤ`, `ℚ`, `ℝ` or `ℂ` and at least one equation hypothesis, at most 6 variables | in the compute tool. On `compute.python` (`POLYRITH_PY`): sympy's Gröbner basis says whether the conclusion lies in the ideal of the hypotheses, then an ansatz of growing degree (up to 2 above the goal's) solved exactly over `Fraction` gives cofactors. On `compute.sage` (`POLYRITH_SAGE`, with no `import`, which Sage refuses): the ideal in `PolynomialRing(QQ, n, "v")` gives the membership and Singular's `lift` the cofactors over `ℚ`; over `ℤ`, a lift with denominators makes it run the same ansatz over Sage's rationals | `linear_combination (c₁) * h₁ + (c₂) * h₂`; over `ℤ` only integer cofactors (the program then tries small integers, -2 to 2, for up to three free unknowns of a solution with denominators, and the next degree, before giving up) |
 | (c) sums of squares (`cert.sos`) | `a ≤ b` (or `≥`) over `ℝ` or `ℚ`, at most 6 variables, Gram bases of at most 36 monomials, at most 150 linear constraints (the exact projection cannot be cut short) | first a plain sum of squares on the Newton polytope's box, then with every hypothesis `g ≥ 0` (`≤`, `<` between polynomials) as a Putinar multiplier; clarabel in the compute tool maximizes `t` with every Gram matrix `⪰ t·I`; here the answer is rounded to rationals (denominators 1 to 10⁸, coarsest first), projected exactly onto the linear constraints, and factored by exact LDLᵀ | `nlinarith [sq_nonneg (l₁), mul_nonneg hpos (sq_nonneg (l₂)), ...]` (each multiplier `have hpos : 0 ≤ g := by linarith`), then the identity `have hsos : 0 ≤ d₁ * (l₁) ^ 2 + ... := add_nonneg ...` closed by `linear_combination hsos` |
 | (d) Bernstein subdivision (`cert.bernstein`) | `a ≤ b` or `a < b` over `ℝ` or `ℚ`, every variable of `b - a` between numeral bounds in the hypotheses, at most 64 coefficients a box | in TypeScript: the Bernstein coefficients of `b - a` on the box, the box split at the midpoint of its widest side until each box's coefficients are nonnegative (positive for `<`), at most `maxBoxes` (default 16) boxes; a negative value at a corner stops it | one `rcases le_total x c with h \| h` per split, and on each box `linarith` (a second candidate: `nlinarith`) with the Bernstein products `mul_nonneg (pow_nonneg (sub_nonneg.2 h₀) i) (pow_nonneg (sub_nonneg.2 h₁) j)` as hints |
 
@@ -180,10 +180,17 @@ failed.
 **The compute tool.** (b) and (c) use the host's compute tool through the registry (`registryCompute` in
 `compute.ts`, which also holds the run's order, `COMPUTE_TOOLS`, so that there is one list): the stage needs
 clarabel (`CERTIFICATE_NEEDS`), so `compute.python` (CX3; its pinned packages have sympy and clarabel) comes first,
-and `compute.sage` (which has sympy; (c) then fails at the import of clarabel and says so) when the host does not
-offer Python or a call finds it unavailable (no Pyodide), for that call and the goal's later ones. One session per goal (scope
-`m10:<problem>:<claim>:certificates`), released when the goal's battery ends; every call is a tool run. Without
-either, (b) and (c) are skipped with the note "the host offers no compute tool"; (a) and (d) need none.
+and `compute.sage` when the host does not offer Python or a call finds it unavailable (no Pyodide), for that call and
+the goal's later ones. Sage refuses every `import` ("Import statements are disabled for Sage executions"), so each
+call gives a program per tool (`ComputeCode`), and the tool runs the one written for the capability that answers: (b)
+has one for each (the data is a literal there, since `json` cannot be imported; the program uses only plain
+statements and loops, no function or comprehension, and prints the same JSON line, which the same strict reader
+takes). (c) needs clarabel, numpy and scipy, which only Python has: its program is Python's alone, so on Sage it is
+not sent, and the note says "skipped: needs compute.python (clarabel); the host's compute tool here is compute.sage"
+(`ComputeUnsuited`). One session per goal (scope `m10:<problem>:<claim>:certificates`), released when the goal's
+battery ends; every call is a tool run. Without either, (b) and (c) are skipped with the note "the host offers no
+compute tool"; (a) and (d) need none. `applicableCertificates` still counts (c) on a host with Sage alone, so the stage's
+reserve is kept for it there; what the stage leaves of it goes back to the tactics.
 
 **The real pass ($0).** `bench/cx4-certificates.json` holds the inputs of CX4's real pass: 20 olympiad-style
 inequalities over `ℝ` (18 expected to have a sum of squares, 4 of them with Putinar multipliers; 4 on a box for
@@ -202,17 +209,32 @@ runs every method of the stage on every problem, one method at a time, with no t
 of `compute.python` (else `compute.sage`), in a session per problem. It prints, per problem, whether the router tags
 it E6 and the methods whose certificate Lean accepted, then the count per method (accepted, expected, and checks
 Lean did not answer); `--out` writes the report as JSON, `--problem ID` (repeatable) picks problems. It changes no
-status and writes no journal. The router tags every problem of the bench E6 (`eq-15`, `¬ ∃ x y : ℤ, x ^ 2 = 8 *
-y + 2`, since a negated existential is read whole). It has not run: this machine has no Lean.
+status and writes no journal. Before the pass, it checks that Lean answers, with the health check of `lean.check`'s
+implementations that a run makes when it pins its tools (`pinTools`; for Kimina, the server's `/health`): when none
+answers, it prints "Lean does not answer: lean.check cannot be reached on host ... Start the Lean server ..." and
+exits 1, with nothing run, instead of 40 problems whose every check went without an answer. The router tags every
+problem of the bench E6 (`eq-15`, `¬ ∃ x y : ℤ, x ^ 2 = 8 * y + 2`, since a negated existential is read whole).
 
-**Not verified.** Nothing of the stage has run against a real Lean, Pyodide or Sage: the tests use a simulated
-Lean and a fake compute tool (the cofactor search also runs on CPython with sympy stubbed). Unchecked: that
+A first pass ran on a host with Lean 4.27.0 and a Kimina server, `compute.sage` in Docker and no Pyodide: modular
+16 of 16, Bernstein 3 of 4, polyrith 0 of 4, sums of squares 0 of 18. Every (b) and (c) call had failed on Sage's
+refusal of the Python programs' imports; (b) now sends Sage its own program and (c) is skipped there with its note.
+Neither has run again since, and (b)'s Sage program has never run on a real Sage. An earlier try without the Kimina
+server gave 0 of 40, every check "without an answer from Lean", which the check of Lean's health now stops at the
+start.
+
+**Not verified.** Besides the first pass above (whose accepted certificates were (a) and (d), on a real Lean), nothing of the stage has run against a real Lean, Pyodide or Sage: the tests use a simulated
+Lean and a fake compute tool (the cofactor search also runs on CPython with sympy stubbed, and (b)'s Sage program,
+checked to have no import, function or comprehension, runs on CPython with the few names of Sage it uses stubbed:
+`QQ`, `PolynomialRing`, the ideal and `lift`). Unchecked: that
 `push_cast` and `generalize` leave the residues as written and that kernel `decide` on `ZMod m` finishes within
 30 s for the larger tuples; that `linear_combination` closes `≤` goals on Mathlib for Lean 4.27.0; that `linarith`
 expands the Bernstein products (else the `nlinarith` candidate); clarabel's `PSDTriangleConeT` order (upper
 triangle by columns, off-diagonal scaled by √2, as the program assumes; a wrong order gives matrices the exact
-check refuses, so no false candidate); whether its precision suffices for olympiad inequalities; the programs on
-Sage.
+check refuses, so no false candidate); whether its precision suffices for olympiad inequalities; (b)'s program on a
+real Sage behind sagemath-mcp: that its allowlist offers `PolynomialRing`, `QQ` and the builtins the program uses
+(`int`, `str`, `tuple`, `dict`, `zip`, `sum`, `max`, `len`, `range`), that `PolynomialRing(QQ, 1, "v")` is a
+multivariate ring (the program reads exponent tuples), and that `exponents()` and `coefficients()` come in the same
+order (a wrong order gives cofactors the exact check refuses, so no false candidate).
 
 ## The screen of text that reaches Lean
 

@@ -1,26 +1,29 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { type ComputeTool, readPolyGoal, routeStatement } from "@seshat/classical";
+import { codeFor, type ComputeTool, readPolyGoal, routeStatement } from "@seshat/classical";
 import type { LeanChecker, LeanSnippet } from "@seshat/core";
-import { certificatePass, CertificateBenchError, readCertificateBench, REPO_ROOT } from "../src/index.ts";
+import { type HostProfile, leanCheckImplementation, loadCatalog, pythonFactory, Registry } from "@seshat/registry";
+import { type CertificatePassReport, certificatePass, certificatesCommand, CertificateBenchError, readCertificateBench, REPO_ROOT } from "../src/index.ts";
+import { fakeSage } from "./fixtures/fake-sage.ts";
 
 const BENCH = join(REPO_ROOT, "bench", "cx4-certificates.json");
 
-/** A Lean that accepts every file, and remembers them. */
-function acceptingLean(): LeanChecker & { snippets: LeanSnippet[] } {
+/** A Lean that accepts every file, and remembers them; `up` false makes its health check fail, as a Kimina server that is not running. */
+function acceptingLean(up = true): LeanChecker & { snippets: LeanSnippet[]; health(): Promise<boolean> } {
   const snippets: LeanSnippet[] = [];
   return {
     implementation: "accepting",
     version: "0",
     snippets,
+    health: async () => up,
     async check(batch: readonly LeanSnippet[]) {
       snippets.push(...batch);
       return batch.map((s) => ({ id: s.id, status: "valid" as const, messages: [], sorries: [], timeMs: 2 }));
     },
-  } as unknown as LeanChecker & { snippets: LeanSnippet[] };
+  } as unknown as LeanChecker & { snippets: LeanSnippet[]; health(): Promise<boolean> };
 }
 
 describe("the inputs of CX4's real pass", () => {
@@ -63,9 +66,9 @@ describe("the pass", () => {
       sessions.push(id);
       return {
         capability: "compute.python",
-        async run(code: string) {
+        async run(code) {
           // (b): a = b + 1 ⊢ a² = b² + 2b + 1, cofactor a + b + 1; (c): an answer out of shape.
-          if (code.includes("groebner")) return { stdout: `${JSON.stringify({ member: true, cofactors: [[[[1, 0], "1", "1"], [[0, 1], "1", "1"], [[0, 0], "1", "1"]]] })}\n` };
+          if (codeFor(code, "compute.python")?.includes("groebner")) return { stdout: `${JSON.stringify({ member: true, cofactors: [[[[1, 0], "1", "1"], [[0, 1], "1", "1"], [[0, 0], "1", "1"]]] })}\n` };
           return { stdout: "no json\n" };
         },
         async release() {
@@ -85,5 +88,64 @@ describe("the pass", () => {
     assert.ok(lean.snippets.some((s) => s.code.includes("linear_combination (a + b + (1 : ℤ)) * h")));
     assert.ok(lean.snippets.every((s) => s.id.startsWith("m10:cert.")));
     assert.match(report.rows[0]?.notes.find((n) => n.method === "sos")?.note ?? "", /expected form/);
+  });
+});
+
+/**
+ * The host of CX4's first real pass: Lean, and compute.sage behind a stand-in that refuses an import as sagemath-mcp does, with
+ * compute.python offered and unreachable (no Pyodide). `script` answers Sage's calls.
+ */
+function passHost(lean: LeanChecker, script: (code: string) => string | Error | undefined): { registry: Registry; sage: ReturnType<typeof fakeSage> } {
+  const host: HostProfile = {
+    host: "test",
+    capabilities: {
+      "lean.check": { use: ["kimina"] },
+      "compute.sage": { use: ["local"] },
+      "compute.python": { use: ["pyodide"], settings: { pyodide: { pyodideDir: "" } } },
+    },
+  };
+  const sage = fakeSage("0.9.5", (code) => (/^\s*(?:import|from)\s/mu.test(code) ? new Error("Import statements are disabled for Sage executions") : script(code)));
+  const catalog = loadCatalog(join(REPO_ROOT, "capabilities"));
+  return { registry: new Registry({ catalog, host, factories: { kimina: () => leanCheckImplementation(lean), pyodide: pythonFactory() }, mcpTransport: () => sage.transport() }), sage };
+}
+
+describe("harness certificates", () => {
+  it("stops before the pass, and says so, when Lean does not answer", async () => {
+    const lean = acceptingLean(false);
+    const { registry, sage } = passHost(lean, () => undefined);
+    const lines: string[] = [];
+    try {
+      const code = await certificatesCommand(registry, BENCH, { log: (l) => lines.push(l) });
+      assert.equal(code, 1);
+    } finally {
+      await registry.close();
+    }
+    assert.equal(lines.length, 1);
+    assert.match(lines[0] as string, /^Lean does not answer: lean\.check cannot be reached on host test \(kimina: accepting does not answer its health check\)\. Every certificate is checked by Lean, so nothing was run\. Start the Lean server/u);
+    assert.deepEqual(lean.snippets, []);
+    assert.deepEqual(sage.calls, []);
+  });
+
+  it("on Sage without Pyodide: (b) runs Sage's program and Lean accepts its cofactors; (c) is skipped and says it needs compute.python", async () => {
+    const lean = acceptingLean();
+    // eq-17, a = b + 1 ⊢ a² = b² + 2b + 1: the cofactor a + b + 1, as Sage's program prints it.
+    const { registry, sage } = passHost(lean, (code) => (code.includes(".lift(cx_ideal)") ? `${JSON.stringify({ member: true, cofactors: [[[[1, 0], "1", "1"], [[0, 1], "1", "1"], [[0, 0], "1", "1"]]] })}\n` : undefined));
+    const out = join(mkdtempSync(join(tmpdir(), "mh-cx4-")), "pass.json");
+    const lines: string[] = [];
+    try {
+      assert.equal(await certificatesCommand(registry, BENCH, { problems: ["eq-17", "ineq-01"], out, log: (l) => lines.push(l) }), 0);
+    } finally {
+      await registry.close();
+    }
+    const report = JSON.parse(readFileSync(out, "utf8")) as CertificatePassReport;
+    assert.equal(report.compute, "compute.sage");
+    assert.deepEqual(report.rows.map((r) => [r.id, r.accepted]), [["ineq-01", []], ["eq-17", ["polyrith"]]]);
+    assert.equal(report.rows[0]?.notes.find((n) => n.method === "sos")?.note, "skipped: needs compute.python (clarabel); the host's compute tool here is compute.sage");
+    // Sage got one call, (b)'s, with no import; (c)'s program never reached it.
+    const evaluated = sage.calls.filter((c) => c.tool === "evaluate_sage").map((c) => String(c.args.code));
+    assert.equal(evaluated.length, 1);
+    assert.ok(evaluated[0]?.startsWith("cx_data = ") && !/\bimport\b/u.test(evaluated[0]));
+    assert.ok(lean.snippets.some((s) => s.code.includes("linear_combination (a + b + (1 : ℤ)) * h")));
+    assert.ok(lines.includes("compute tool: compute.sage"));
   });
 });

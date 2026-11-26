@@ -7,7 +7,7 @@ import { BlobStore, Journal } from "@seshat/core";
 import { InterruptedError, isInterrupted, type Line, type ProblemContext, type SessionContext, type ValidateRequest, type ValidateResult } from "@seshat/lines";
 import { MemoryStore } from "@seshat/memory";
 import { CapabilityError, type Registry } from "@seshat/registry";
-import { BATTERY_RUN, createM10, describeTried, FIRST_ORDER_RUN, M10, M10_DEFAULTS, type M10Services, readOptions, type Solvers, subgoalsOf } from "../src/index.ts";
+import { BATTERY_RUN, type ComputeCode, codeFor, createM10, describeTried, FIRST_ORDER_RUN, M10, M10_DEFAULTS, type M10Services, readOptions, type Solvers, subgoalsOf } from "../src/index.ts";
 import { ScriptedLean, type Script } from "./fake-lean.ts";
 
 const valid: ValidateResult = { verdict: "valid", status: "computed", reasons: [], validationId: "val_1" };
@@ -266,9 +266,9 @@ describe("the certificate stage in the line (plan change CX4)", () => {
       calls: 0,
       released: 0,
       scopes: [] as string[],
-      async run(code: string) {
+      async run(code: ComputeCode) {
         tool.calls++;
-        assert.ok(code.includes("clarabel"));
+        assert.ok(codeFor(code, "compute.python")?.includes("clarabel"));
         return { stdout: `${JSON.stringify({ status: "Solved", x: [1, -1, 1, 0] })}\n` };
       },
       async release() {

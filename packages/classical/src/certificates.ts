@@ -1,5 +1,5 @@
 import { type LeanChecker, leanTextProblems } from "@seshat/core";
-import type { ComputeAnswer, ComputeNeed, ComputeTool } from "./compute.ts";
+import { type ComputeAnswer, type ComputeNeed, type ComputeTool, ComputeUnsuited } from "./compute.ts";
 import { parseStatement, type Term, Unreadable, canonicalSort } from "./parse.ts";
 import { ldlt, Poly, solveLinear, toPoly } from "./polynomial.ts";
 import { isInteger, isZero, ONE, type Rat, rat, radd, rcmp, rdiv, rmul, rneg, roundTo, rsign, rsub, ZERO } from "./rational.ts";
@@ -56,7 +56,9 @@ const callSeconds = (deadline: number): number => Math.min(COMPUTE_CALL_SEC, Mat
 
 /**
  * What the stage needs of the host's compute tool (`registryCompute`'s `needs`): (c) needs clarabel, which only
- * `compute.python`'s package set has, so it is tried first, and Sage when it cannot be reached; (b) needs sympy, which both have.
+ * `compute.python`'s package set has, so it is tried first, and Sage when it cannot be reached. (b) runs on either, with a
+ * program of each: sympy on Python, Sage's own polynomial rings on Sage, which refuses every `import`. (c) has a Python
+ * program only, so on Sage alone it is skipped with a note, and no call is made.
  */
 export const CERTIFICATE_NEEDS: readonly ComputeNeed[] = ["clarabel"];
 
@@ -342,8 +344,18 @@ function lastJson(answer: ComputeAnswer): unknown {
   }
 }
 
-/** Python that reads `DATA` (a JSON text written here) first. Plain Python plus sympy, which Sage has too. */
+/** Python that reads `DATA` (a JSON text written here) first, for `compute.python`. */
 const pythonWith = (data: unknown, body: string): string => `DATA = ${JSON.stringify(JSON.stringify(data))}\n${body}`;
+
+/**
+ * Sage code that has `cx_data` first: Sage refuses every `import`, `json` included, so the data is written as a literal. JSON of
+ * arrays, objects, strings and integers is a Python literal as it is; `true`, `false` and `null` are not, so the data has none.
+ */
+const sageWith = (data: unknown, body: string): string => {
+  const text = JSON.stringify(data);
+  if (/\b(?:true|false|null)\b/u.test(text.replace(/"(?:[^"\\]|\\.)*"/gu, '""'))) throw new TypeError("the data of a Sage program has no true, false or null");
+  return `cx_data = ${text}\n${body}`;
+};
 
 /**
  * (b)'s program: sympy's Gröbner basis says whether the target lies in the ideal of the hypotheses; then the
@@ -453,6 +465,187 @@ if out["member"]:
 print(json.dumps(out))
 `;
 
+/**
+ * (b)'s program for `compute.sage`, which refuses `import` and lets the code use the names Sage offers and those it assigns: the
+ * ideal of the hypotheses in `PolynomialRing(QQ, n, "v")` says whether the target lies in it (Singular's Gröbner basis), and
+ * Singular's `lift` gives cofactors over ℚ. Over ℤ (`integral`), cofactors with denominators make it run `POLYRITH_PY`'s ansatz
+ * (the same degrees, small integers for up to three free unknowns), over Sage's rationals; the lift is given when it finds no
+ * integral one. Plain statements and loops only, every name assigned with the prefix `cx_`, no function and no comprehension,
+ * so that no name is looked up outside the code's own namespace. It prints the same JSON line as `POLYRITH_PY`, built by hand.
+ */
+export const POLYRITH_SAGE = String.raw`cx_nv = int(cx_data["nvars"])
+cx_ring = PolynomialRing(QQ, cx_nv, "v")
+cx_gd = []
+for cx_raw in cx_data["gens"] + [cx_data["target"]]:
+    cx_p = {}
+    for cx_t in cx_raw:
+        cx_e = []
+        for cx_k in cx_t[0]:
+            cx_e.append(int(cx_k))
+        cx_p[tuple(cx_e)] = QQ(int(cx_t[1])) / QQ(int(cx_t[2]))
+    cx_gd.append(cx_p)
+cx_td = cx_gd.pop()
+cx_gens = []
+for cx_p in cx_gd:
+    cx_gens.append(cx_ring(cx_p))
+cx_target = cx_ring(cx_td)
+cx_ideal = cx_ring.ideal(cx_gens)
+cx_member = cx_target in cx_ideal
+cx_cof = None
+if cx_member:
+    cx_cof = []
+    for cx_c in cx_target.lift(cx_ideal):
+        cx_p = {}
+        for cx_e, cx_v in zip(cx_c.exponents(), cx_c.coefficients()):
+            cx_k = []
+            for cx_x in cx_e:
+                cx_k.append(int(cx_x))
+            cx_p[tuple(cx_k)] = QQ(cx_v)
+        cx_cof.append(cx_p)
+cx_whole = True
+if cx_cof is not None:
+    for cx_p in cx_cof:
+        for cx_v in cx_p.values():
+            if cx_v.denominator() != 1:
+                cx_whole = False
+if cx_cof is not None and int(cx_data["integral"]) == 1 and not cx_whole:
+    cx_degs = []
+    for cx_p in cx_gd + [cx_td]:
+        cx_dg = 0
+        for cx_e in cx_p:
+            if sum(cx_e) > cx_dg:
+                cx_dg = sum(cx_e)
+        cx_degs.append(cx_dg)
+    cx_top = max(cx_degs)
+    cx_found = None
+    for cx_extra in range(int(cx_data["extra"]) + 1):
+        if cx_found is not None:
+            break
+        cx_bound = cx_top + cx_extra
+        cx_cols = []
+        for cx_i in range(len(cx_gd)):
+            if cx_bound >= cx_degs[cx_i]:
+                cx_ms = [()]
+                for cx_y in range(cx_nv):
+                    cx_next = []
+                    for cx_m in cx_ms:
+                        for cx_a in range(cx_bound - cx_degs[cx_i] - sum(cx_m) + 1):
+                            cx_next.append(cx_m + (cx_a,))
+                    cx_ms = cx_next
+                for cx_m in cx_ms:
+                    cx_cols.append((cx_i, cx_m))
+        cx_eqs = {}
+        for cx_j in range(len(cx_cols)):
+            cx_i = cx_cols[cx_j][0]
+            cx_m = cx_cols[cx_j][1]
+            for cx_e in cx_gd[cx_i]:
+                cx_k = []
+                for cx_y in range(cx_nv):
+                    cx_k.append(cx_e[cx_y] + cx_m[cx_y])
+                cx_k = tuple(cx_k)
+                if cx_k not in cx_eqs:
+                    cx_eqs[cx_k] = {}
+                cx_eqs[cx_k][cx_j] = cx_eqs[cx_k].get(cx_j, QQ(0)) + cx_gd[cx_i][cx_e]
+        cx_fits = True
+        for cx_k in cx_td:
+            if cx_k not in cx_eqs:
+                cx_fits = False
+        if not cx_fits:
+            continue
+        cx_rows = []
+        cx_rhs = []
+        for cx_k in cx_eqs:
+            cx_rows.append(dict(cx_eqs[cx_k]))
+            cx_rhs.append(cx_td.get(cx_k, QQ(0)))
+        cx_piv = {}
+        cx_r = 0
+        for cx_col in range(len(cx_cols)):
+            if cx_r == len(cx_rows):
+                break
+            cx_at = None
+            for cx_i in range(cx_r, len(cx_rows)):
+                if cx_at is None and cx_rows[cx_i].get(cx_col, QQ(0)) != 0:
+                    cx_at = cx_i
+            if cx_at is None:
+                continue
+            cx_rows[cx_r], cx_rows[cx_at] = cx_rows[cx_at], cx_rows[cx_r]
+            cx_rhs[cx_r], cx_rhs[cx_at] = cx_rhs[cx_at], cx_rhs[cx_r]
+            cx_inv = QQ(1) / cx_rows[cx_r][cx_col]
+            cx_scaled = {}
+            for cx_c, cx_v in cx_rows[cx_r].items():
+                cx_scaled[cx_c] = cx_v * cx_inv
+            cx_rows[cx_r] = cx_scaled
+            cx_rhs[cx_r] = cx_rhs[cx_r] * cx_inv
+            for cx_i in range(len(cx_rows)):
+                cx_f = cx_rows[cx_i].get(cx_col, QQ(0))
+                if cx_i == cx_r or cx_f == 0:
+                    continue
+                for cx_c, cx_v in cx_rows[cx_r].items():
+                    cx_w = cx_rows[cx_i].get(cx_c, QQ(0)) - cx_f * cx_v
+                    if cx_w == 0:
+                        cx_rows[cx_i].pop(cx_c, None)
+                    else:
+                        cx_rows[cx_i][cx_c] = cx_w
+                cx_rhs[cx_i] = cx_rhs[cx_i] - cx_f * cx_rhs[cx_r]
+            cx_piv[cx_col] = cx_r
+            cx_r = cx_r + 1
+        cx_ok = True
+        for cx_i in range(cx_r, len(cx_rows)):
+            if cx_rhs[cx_i] != 0:
+                cx_ok = False
+        if not cx_ok:
+            continue
+        cx_free = []
+        for cx_col in cx_piv:
+            cx_i = cx_piv[cx_col]
+            if cx_rhs[cx_i].denominator() != 1:
+                for cx_c in cx_rows[cx_i]:
+                    if cx_c not in cx_piv and cx_c not in cx_free:
+                        cx_free.append(cx_c)
+        cx_free = cx_free[:3]
+        for cx_code in range(5 ** len(cx_free)):
+            cx_ch = {}
+            cx_rest = cx_code
+            for cx_c in cx_free:
+                cx_ch[cx_c] = QQ([0, 1, -1, 2, -2][cx_rest % 5])
+                cx_rest = cx_rest // 5
+            cx_x = dict(cx_ch)
+            cx_whole = True
+            for cx_col in cx_piv:
+                cx_i = cx_piv[cx_col]
+                cx_v = cx_rhs[cx_i]
+                for cx_c in cx_ch:
+                    cx_v = cx_v - cx_rows[cx_i].get(cx_c, QQ(0)) * cx_ch[cx_c]
+                cx_x[cx_col] = cx_v
+                if cx_v.denominator() != 1:
+                    cx_whole = False
+            if cx_whole:
+                cx_found = []
+                for cx_p in cx_gd:
+                    cx_found.append({})
+                for cx_j in cx_x:
+                    if cx_x[cx_j] != 0:
+                        cx_found[cx_cols[cx_j][0]][cx_cols[cx_j][1]] = cx_x[cx_j]
+                break
+    if cx_found is not None:
+        cx_cof = cx_found
+cx_text = "null"
+if cx_cof is not None:
+    cx_parts = []
+    for cx_p in cx_cof:
+        cx_terms = []
+        for cx_e in cx_p:
+            cx_v = QQ(cx_p[cx_e])
+            if cx_v != 0:
+                cx_es = []
+                for cx_x in cx_e:
+                    cx_es.append(str(int(cx_x)))
+                cx_terms.append("[[" + ", ".join(cx_es) + '], "' + str(cx_v.numerator()) + '", "' + str(cx_v.denominator()) + '"]')
+        cx_parts.append("[" + ", ".join(cx_terms) + "]")
+    cx_text = "[" + ", ".join(cx_parts) + "]"
+print('{"member": ' + ("true" if cx_member else "false") + ', "cofactors": ' + cx_text + "}")
+`;
+
 /** How many degrees above the goal's the cofactor ansatz of (b) goes. */
 const POLYRITH_EXTRA_DEGREE = 2;
 /** The most variables (b) and (c) send to the tool. */
@@ -473,7 +666,9 @@ export async function polyrithCandidates(goal: PolyGoal, compute: ComputeTool | 
   const timeoutSec = callSeconds(options.deadline);
   if (timeoutSec < 1) return { candidates: [], note: "not tried: the time for this method is spent" };
   const call = { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) };
-  const answer = await compute.run(pythonWith({ nvars: n, gens: gens.map(wire), target: wire(target), extra: POLYRITH_EXTRA_DEGREE, integral: goal.sort === "ℤ" }, POLYRITH_PY), call);
+  // `integral` is 1 or 0: Sage's literal has no `true`. The program is the one for the tool that answers.
+  const data = { nvars: n, gens: gens.map(wire), target: wire(target), extra: POLYRITH_EXTRA_DEGREE, integral: goal.sort === "ℤ" ? 1 : 0 };
+  const answer = await compute.run({ "compute.python": pythonWith(data, POLYRITH_PY), "compute.sage": sageWith(data, POLYRITH_SAGE) }, call);
   const out = lastJson(answer) as { member?: unknown; cofactors?: unknown } | undefined;
   if (out === undefined || typeof out !== "object" || out === null || typeof out.member !== "boolean") return { candidates: [], note: `${compute.capability} gave no answer in the expected form` };
   if (!out.member) return { candidates: [], note: "the conclusion is not in the ideal of the equation hypotheses" };
@@ -790,7 +985,14 @@ export async function sosCandidates(goal: PolyGoal, compute: ComputeTool | undef
       rhs: program.rhs.map((v) => Number(v.n) / Number(v.d)),
       timeLimit: Math.max(0.5, SDP_TIME_SHARE * timeoutSec),
     };
-    const answer = await compute.run(pythonWith(data, SOS_PY), { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
+    let answer: ComputeAnswer;
+    try {
+      // Python only: clarabel, numpy and scipy are not in Sage's set here, and Sage refuses the imports.
+      answer = await compute.run({ "compute.python": pythonWith(data, SOS_PY) }, { timeoutSec, ...(options.signal !== undefined ? { signal: options.signal } : {}) });
+    } catch (error) {
+      if (!(error instanceof ComputeUnsuited)) throw error;
+      return { candidates: [], note: `skipped: needs compute.python (clarabel); the host's compute tool here is ${error.capability}` };
+    }
     const out = lastJson(answer) as { status?: unknown; x?: unknown } | undefined;
     if (out === undefined || typeof out !== "object" || out === null || typeof out.status !== "string" || !Array.isArray(out.x) || out.x.length !== program.nx + 1 || !out.x.every((v) => typeof v === "number" && Number.isFinite(v))) {
       last = `${compute.capability} gave no answer in the expected form`;

@@ -287,7 +287,13 @@ problem "the host's compute tool" (CA17, `RunConfig.autoTool`): the first of `CO
 `tools.ts` re-exports) that the host offers. The same file orders the tools for a caller that needs a
 package only one of them has (`computeOrder(["clarabel"])` puts `compute.python` first, for line M10's
 certificate stage; `computeOrder(["pysat"])` does the same for line M11's SAT encoders, plan change CX6,
-[models.md](models.md#sat-encoders)), and its `registryCompute` passes to the next tool when a call finds one unavailable. When the run pins its
+[models.md](models.md#sat-encoders)), and its `registryCompute` passes to the next tool when a call finds one unavailable.
+A call's code may be one text, or a text per capability (`ComputeCode`, such as `{ "compute.python": ..., "compute.sage":
+... }`) when the code differs between the two: Sage refuses every `import`, so Python code that imports a module
+cannot run there. The tool then runs the text written for the capability that answers, passes over one the code has none
+for (without marking it unavailable), and throws `ComputeUnsuited`, with nothing sent, when the only tools left have
+none: line M10's sums of squares, whose program needs clarabel, is skipped that way on Sage alone
+([classical.md](classical.md#the-certificate-stage-plan-change-cx4)). When the run pins its
 tools at its start and that tool does not answer, the next one the host offers takes its place
 (`computeFallbacks`, `pinTools`): the run logs "compute.sage cannot be reached ...: compute.python is
 used in its place" and records `compute.python` as its `autoTool`; the prompt's hash in `run.started`

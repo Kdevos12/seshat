@@ -19,12 +19,16 @@ import {
   computeFallbacks,
   computeOrder,
   type ComputeAnswer,
+  type ComputeCode,
   type ComputeTool,
+  codeFor,
+  ComputeUnsuited,
   DEFAULT_CERTIFICATES,
   DEFAULT_SETTINGS,
   modularCandidates,
   obstructingModuli,
   POLYRITH_PY,
+  POLYRITH_SAGE,
   polyrithCandidates,
   Posteriors,
   primaryDomain,
@@ -52,23 +56,31 @@ function goalOf(statement: string): PolyGoal {
   return g;
 }
 
-/** Stands in for compute.python: reads the `DATA` line the stage wrote and answers with what `answer` says. */
+/**
+ * Stands in for compute.python, or for compute.sage: reads the data line the stage wrote (`DATA = "..."` for Python, `cx_data = ...`
+ * for Sage) and answers with what `answer` says. Like the real tools, it runs only the code written for it (`ComputeUnsuited` without
+ * one), and Sage refuses an `import`, with sagemath-mcp's message.
+ */
 class FakeCompute implements ComputeTool {
-  readonly capability = "compute.python";
   readonly calls: Array<{ code: string; data: Record<string, unknown> }> = [];
   released = 0;
   readonly #answer: (code: string, data: Record<string, unknown>) => string;
+  readonly capability: "compute.python" | "compute.sage";
 
-  constructor(answer: (code: string, data: Record<string, unknown>) => string) {
+  constructor(answer: (code: string, data: Record<string, unknown>) => string, capability: "compute.python" | "compute.sage" = "compute.python") {
     this.#answer = answer;
+    this.capability = capability;
   }
 
-  async run(code: string): Promise<ComputeAnswer> {
-    const m = /^DATA = (".*")\n/u.exec(code);
+  async run(code: ComputeCode): Promise<ComputeAnswer> {
+    const text = codeFor(code, this.capability);
+    if (text === undefined) throw new ComputeUnsuited(Object.keys(code), this.capability);
+    if (this.capability === "compute.sage" && /^\s*(?:import|from)\s/mu.test(text)) throw new Error("compute.sage/docker failed: the tool reported an error: Import statements are disabled for Sage executions");
+    const m = this.capability === "compute.sage" ? /^cx_data = (.*)\n/u.exec(text) : /^DATA = (".*")\n/u.exec(text);
     assert.ok(m !== null, "the program starts with its data");
-    const data = JSON.parse(JSON.parse(m[1] as string) as string) as Record<string, unknown>;
-    this.calls.push({ code, data });
-    return { stdout: `${this.#answer(code, data)}\n` };
+    const data = (this.capability === "compute.sage" ? JSON.parse(m[1] as string) : JSON.parse(JSON.parse(m[1] as string) as string)) as Record<string, unknown>;
+    this.calls.push({ code: text, data });
+    return { stdout: `${this.#answer(text, data)}\n` };
   }
 
   async release(): Promise<void> {
@@ -183,6 +195,35 @@ describe("(b) local polyrith", () => {
     }
   });
 
+  it("sends compute.sage a program without import, whose cofactors certify the goal through Lean", async () => {
+    // The fake refuses an import as sagemath-mcp does: the Python program would fail here as it did on the real pass.
+    const sage = new FakeCompute(() => JSON.stringify({ member: true, cofactors }), "compute.sage");
+    await assert.rejects(sage.run(`DATA = "{}"\n${POLYRITH_PY}`), /Import statements are disabled/);
+    const script = "linear_combination (x + y) * h1 + (y + (2 : ℝ)) * h2";
+    const lean = new ScriptedLean({ [tacticOf(snippetFor({ header: HEADER, statement: STATEMENT }, script))]: { ok: true } });
+    const submitted: string[] = [];
+    const out = await runCertificates({
+      checker: lean,
+      goal: { header: HEADER, statement: STATEMENT },
+      domain: "general",
+      settings: { ...DEFAULT_CERTIFICATES, methods: ["polyrith"] },
+      compute: sage,
+      budgetSec: 60,
+      maxSubmissions: 1,
+      submit: async (proof) => (submitted.push(proof), true),
+    });
+    assert.equal(out.winner?.tactic, "cert.polyrith");
+    assert.deepEqual(submitted, [script]);
+    assert.equal(sage.calls.length, 1);
+    const sent = sage.calls[0]?.code ?? "";
+    assert.ok(!/\bimport\b/u.test(sent), "no import reaches Sage");
+    assert.ok(sent.includes("PolynomialRing(QQ, cx_nv") && sent.includes(".lift(cx_ideal)"), "Sage's own ring, ideal and lift");
+    assert.deepEqual(sage.calls[0]?.data, { nvars: 2, gens: [[[[1, 0], "1", "1"], [[0, 1], "-1", "1"]], [[[0, 1], "1", "1"], [[0, 0], "-2", "1"]]], target: [[[2, 0], "1", "1"], [[0, 0], "-4", "1"]], extra: 2, integral: 0 });
+    // A wrong answer from Sage still costs only the call: the cofactors are checked here.
+    const wrong = await polyrithCandidates(goalOf(STATEMENT), new FakeCompute(() => JSON.stringify({ member: true, cofactors: [cofactors[0], [[[0, 1], "1", "1"]]] }), "compute.sage"), call);
+    assert.match(wrong.note ?? "", /do not combine/);
+  });
+
   it("needs integer cofactors over ℤ", async () => {
     const half = JSON.stringify({ member: true, cofactors: [[[[0, 0], "1", "2"]]] });
     const out = await polyrithCandidates(goalOf("(x y : ℤ) (h : 2 * x = 2 * y) : x = y"), new FakeCompute(() => half), call);
@@ -232,6 +273,18 @@ describe("(c) sums of squares", () => {
     const indefinite = await sosCandidates(goalOf("(a b : ℝ) : 3 * a * b ≤ a ^ 2 + b ^ 2"), new FakeCompute(() => JSON.stringify({ status: "Solved", x: [1, -1.5, 1, 0] })), call);
     assert.equal(indefinite.candidates.length, 0);
     assert.match(indefinite.note ?? "", /no rounding/);
+  });
+});
+
+describe("(c) on Sage alone", () => {
+  it("is skipped with a note, and no program is sent: clarabel is Python's", async () => {
+    const sage = new FakeCompute(() => "{}", "compute.sage");
+    const out = await sosCandidates(goalOf("(a b : ℝ) : 2 * a * b ≤ a ^ 2 + b ^ 2"), sage, call);
+    assert.equal(out.candidates.length, 0);
+    assert.equal(out.note, "skipped: needs compute.python (clarabel); the host's compute tool here is compute.sage");
+    assert.equal(sage.calls.length, 0);
+    // A goal outside (c)'s fragment still says so first.
+    assert.match((await sosCandidates(goalOf("(x : ℤ) : 0 ≤ x ^ 2"), sage, call)).note ?? "", /outside the fragment/);
   });
 });
 
@@ -401,10 +454,12 @@ describe("the host's compute tool for the stage", () => {
 
   it("is Sage when compute.python is offered but cannot be reached, for that call and the later ones", async () => {
     const calls: string[] = [];
+    const codes: string[] = [];
     const registry = {
       offers: (id: string) => id === "compute.python" || id === "compute.sage",
-      invoke: async (id: string) => {
+      invoke: async (id: string, input: { code: string }) => {
         calls.push(id);
+        codes.push(input.code);
         if (id === "compute.python") throw new CapabilityError("unavailable", id, "compute.python: no implementation could be reached (pyodide: Pyodide is not installed)");
         return { output: { result_type: "statement", stdout: '{"member": false}\n', elapsed_ms: 1 } };
       },
@@ -416,6 +471,39 @@ describe("the host's compute tool for the stage", () => {
     assert.equal(tool?.capability, "compute.sage");
     await tool?.run("1", { timeoutSec: 5 });
     assert.deepEqual(calls, ["compute.python", "compute.sage", "compute.sage"]);
+    // Each tool got the program written for it: Python's with its imports, Sage's without.
+    assert.match(codes[0] ?? "", /^DATA = .*\nimport itertools, json/u);
+    assert.ok(codes[1]?.startsWith("cx_data = ") && codes[1].endsWith(POLYRITH_SAGE));
+    // (c)'s program is Python's alone: on Sage it is not sent, and the stage says why.
+    const sos = await sosCandidates(goalOf("(a b : ℝ) : 2 * a * b ≤ a ^ 2 + b ^ 2"), tool, call);
+    assert.match(sos.note ?? "", /^skipped: needs compute.python \(clarabel\); the host's compute tool here is compute.sage$/u);
+    assert.equal(calls.length, 3);
+  });
+
+  it("passes over a tool the code has no text for, without marking it unavailable", async () => {
+    const calls: string[] = [];
+    const registry = {
+      offers: () => true,
+      invoke: async (id: string) => {
+        calls.push(id);
+        if (id === "compute.python") throw new CapabilityError("unavailable", id, "compute.python: Pyodide is not installed");
+        return { output: { result_type: "statement", stdout: `${id}\n`, elapsed_ms: 1 } };
+      },
+      release: async () => {},
+    };
+    // Sage first (the run's order): a Python-only call passes over Sage, goes to Python and finds it down. Sage is left, and has no
+    // code for the call: it is unsuited, and Sage stays the tool for the calls that have code for it.
+    const tool = registryCompute(registry as never, { actor: "a", scope: "s" });
+    assert.equal(tool?.capability, "compute.sage");
+    await assert.rejects(tool?.run({ "compute.python": "print(1)" }, { timeoutSec: 5 }) as Promise<unknown>, ComputeUnsuited);
+    assert.deepEqual(await tool?.run({ "compute.sage": "1", "compute.python": "1" }, { timeoutSec: 5 }), { stdout: "compute.sage\n" });
+    assert.deepEqual(calls, ["compute.python", "compute.sage"]);
+    // With Python first, a call Sage has no code for, once Python is down, is unsuited: nothing is sent.
+    const python = registryCompute(registry as never, { actor: "a", scope: "s", needs: CERTIFICATE_NEEDS });
+    assert.equal((await python?.run("x", { timeoutSec: 5 }))?.stdout, "compute.sage\n");
+    calls.length = 0;
+    await assert.rejects(python?.run({ "compute.python": "x" }, { timeoutSec: 5 }) as Promise<unknown>, (error: unknown) => error instanceof ComputeUnsuited && error.capability === "compute.sage" && error.wanted.join() === "compute.python");
+    assert.deepEqual(calls, []);
   });
 
   it("is one order with the run's: Sage first, and the tools with clarabel first for the stage", () => {
@@ -466,6 +554,86 @@ describe("the stage's Python programs", () => {
   });
 });
 
+/**
+ * A stand-in for the few names of Sage that (b)'s Sage program uses, in plain Python: `QQ` (rationals with Sage's `numerator()` and
+ * `denominator()` methods), `PolynomialRing(QQ, n, "v")` whose elements are built from exponent dictionaries and give `exponents()`
+ * and `coefficients()`, and an ideal whose membership (`MEMBER`) and `lift` (`LIFT`) the driver plants.
+ */
+const SAGE_STUB = String.raw`from fractions import Fraction
+class Q:
+    def __init__(s, v): s.v = v.v if isinstance(v, Q) else Fraction(v)
+    def __add__(s, o): return Q(s.v + Q(o).v)
+    __radd__ = __add__
+    def __sub__(s, o): return Q(s.v - Q(o).v)
+    def __rsub__(s, o): return Q(Q(o).v - s.v)
+    def __mul__(s, o): return Q(s.v * Q(o).v)
+    __rmul__ = __mul__
+    def __truediv__(s, o): return Q(s.v / Q(o).v)
+    def __eq__(s, o): return s.v == Q(o).v
+    def __ne__(s, o): return not s == o
+    def __hash__(s): return hash(s.v)
+    def numerator(s): return s.v.numerator
+    def denominator(s): return s.v.denominator
+QQ = Q
+class Poly:
+    def __init__(s, d): s.d = {tuple(k): Q(v) for k, v in d.items() if Q(v) != 0}
+    def exponents(s): return list(s.d)
+    def coefficients(s): return list(s.d.values())
+    def lift(s, ideal): return [Poly(c) for c in LIFT]
+class Ideal:
+    def __init__(s, g): s.g = g
+    def __contains__(s, p): return MEMBER
+class Ring:
+    def __call__(s, d): return Poly(d)
+    def ideal(s, g): return Ideal(g)
+def PolynomialRing(base, n, name):
+    assert base is QQ and name == "v"
+    return Ring()
+`;
+
+describe("the stage's Sage program", () => {
+  it("parses as Python with no import, and runs its plumbing and its ℤ ansatz on CPython with Sage stubbed", { skip: python3 ? false : "no python3 on this host" }, () => {
+    const dir = mkdtempSync(join(tmpdir(), "mh-cert-sage-"));
+    writeFileSync(join(dir, "stub.py"), SAGE_STUB);
+    writeFileSync(join(dir, "program.py"), POLYRITH_SAGE);
+    const driver = [
+      "import ast, json, sys",
+      "src = open(sys.argv[1] + '/program.py').read()",
+      "assert not any(isinstance(n, (ast.Import, ast.ImportFrom)) for n in ast.walk(ast.parse(src))), 'an import'",
+      "assert not any(isinstance(n, (ast.FunctionDef, ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)) for n in ast.walk(ast.parse(src))), 'a function or a comprehension'",
+      "exec(open(sys.argv[1] + '/stub.py').read())",
+      "case = json.loads(sys.stdin.read())",
+      "MEMBER = case['member']",
+      "LIFT = [{tuple(e): Fraction(int(a), int(b)) for e, a, b in c} for c in case['lift']]",
+      "cx_data = case['data']",
+      "exec(src)",
+    ].join("\n");
+    const run = (input: unknown): { member: boolean; cofactors: Array<Array<[number[], string, string]>> | null } => {
+      const out = spawnSync("python3", ["-I", "-c", driver, dir], { input: JSON.stringify(input), encoding: "utf8", env: {} });
+      assert.equal(out.status, 0, out.stderr);
+      const last = out.stdout.trim().split("\n").at(-1) as string;
+      return JSON.parse(last) as { member: boolean; cofactors: Array<Array<[number[], string, string]>> | null };
+    };
+    // x² - 4 = (x + y)(x - y) + (y + 2)(y - 2): the lift's cofactors come back as the strict parser reads them.
+    const data = { nvars: 2, gens: [[[[1, 0], "1", "1"], [[0, 1], "-1", "1"]], [[[0, 1], "1", "1"], [[0, 0], "-2", "1"]]], target: [[[2, 0], "1", "1"], [[0, 0], "-4", "1"]], extra: 2, integral: 0 };
+    const lift = [[[[1, 0], "1", "1"], [[0, 1], "1", "1"]], [[[0, 1], "1", "1"], [[0, 0], "2", "1"]]];
+    const got = run({ member: true, lift, data });
+    assert.equal(got.member, true);
+    const poly = (n: number, raw: unknown): Poly => new Poly(n, (raw as Array<[number[], string, string]>).map(([m, a, b]) => [m, rat(BigInt(a), BigInt(b))]));
+    const sum = poly(2, got.cofactors?.[0]).mul(poly(2, data.gens[0])).add(poly(2, got.cofactors?.[1]).mul(poly(2, data.gens[1])));
+    assert.ok(sum.equals(poly(2, data.target)));
+    assert.deepEqual(run({ member: false, lift: [], data }), { member: false, cofactors: null });
+    // Over ℤ: x = (-1)·2x + 1·3x. The lift x = (1/2)·2x has a denominator; with integral 1 the ansatz finds integers.
+    const integral = { nvars: 1, gens: [[[[1], "2", "1"]], [[[1], "3", "1"]]], target: [[[1], "1", "1"]], extra: 2 };
+    for (const flag of [1, 0]) {
+      const out = run({ member: true, lift: [[[[0], "1", "2"]], []], data: { ...integral, integral: flag } });
+      const cof = (out.cofactors ?? []).map((c) => poly(1, c));
+      assert.ok(cof[0]?.mul(poly(1, integral.gens[0])).add((cof[1] as Poly).mul(poly(1, integral.gens[1]))).equals(poly(1, integral.target)));
+      assert.equal(cof.every((c) => c.integral()), flag === 1, `integral ${flag}`);
+    }
+  });
+});
+
 describe("the stage's time", () => {
   /** A compute tool that answers nothing useful and uses `use(timeoutSec)` milliseconds of each call. */
   const slowTool = (use: (timeoutSec: number) => number) => {
@@ -473,7 +641,7 @@ describe("the stage's time", () => {
     const tool: ComputeTool = {
       capability: "compute.python",
       async run(code, { timeoutSec }) {
-        const data = JSON.parse(JSON.parse((/^DATA = (".*")\n/u.exec(code) as RegExpExecArray)[1] as string) as string) as Record<string, unknown>;
+        const data = JSON.parse(JSON.parse((/^DATA = (".*")\n/u.exec(codeFor(code, "compute.python") as string) as RegExpExecArray)[1] as string) as string) as Record<string, unknown>;
         calls.push({ timeoutSec, timeLimit: data.timeLimit });
         await new Promise((resolveWait) => setTimeout(resolveWait, use(timeoutSec)));
         return { stdout: "{}\n" };

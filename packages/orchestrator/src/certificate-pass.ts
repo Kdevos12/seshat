@@ -17,6 +17,7 @@ import {
 } from "@seshat/classical";
 import type { LeanChecker } from "@seshat/core";
 import { RegistryLeanChecker, type Registry } from "@seshat/registry";
+import { pinTools } from "./tools.ts";
 
 /**
  * The real pass of plan change CX4 ($0): line M10's certificate stage alone on a small bench (`bench/cx4-certificates.json`),
@@ -40,6 +41,9 @@ export interface CertificateBench {
 }
 
 export class CertificateBenchError extends Error {}
+
+/** The capability every certificate is checked by. */
+const LEAN_CHECK = "lean.check";
 
 /**
  * Reads and checks a certificate bench file. Its header and statements reach Lean files, so they pass the screen of text that
@@ -159,7 +163,8 @@ export async function certificatePass(bench: CertificateBench, deps: Certificate
 /**
  * `harness certificates FILE [--host HOST] [--problem ID]... [--out FILE]`: the pass on the host's Lean (`lean.check`) and compute
  * tool (`compute.python`, else `compute.sage`), as tool runs of the actor `line:M10`. Prints a line per problem and the count per
- * method; `--out` writes the whole report as JSON.
+ * method; `--out` writes the whole report as JSON. Lean's health is checked first, as a run pins its tools (`pinTools`): when no
+ * implementation of `lean.check` answers, it says so and stops (1), instead of counting every check as one without an answer.
  */
 export async function certificatesCommand(registry: Registry, file: string, options: { problems?: readonly string[]; out?: string; log: (line: string) => void; signal?: AbortSignal }): Promise<number> {
   let bench: CertificateBench;
@@ -177,6 +182,14 @@ export async function certificatesCommand(registry: Registry, file: string, opti
       return 2;
     }
     bench = { ...bench, problems: bench.problems.filter((p) => options.problems?.includes(p.id)) };
+  }
+  const lean = await pinTools(registry, [LEAN_CHECK]);
+  if (lean.problems.length > 0) {
+    options.log(
+      `Lean does not answer: ${lean.problems.join("; ")}. Every certificate is checked by Lean, so nothing was run. ` +
+        "Start the Lean server (a Kimina Lean server, documentation/lean.md; LEAN_SERVER_API_URL says where it is), check it with `pnpm harness health lean.check`, and run this again.",
+    );
+    return 1;
   }
   const actor = "line:M10";
   const report = await certificatePass(bench, {

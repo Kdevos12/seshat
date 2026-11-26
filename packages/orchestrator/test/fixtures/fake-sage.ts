@@ -5,7 +5,8 @@
  * The toy language: `name = text` defines a name (a statement); `name` alone returns its text, or
  * is refused with the server's message when the workspace has not assigned it; `print(text)`
  * prints; `fail` fails with an empty message, as some of Sage's errors do; anything else returns
- * `eval(code)`. A `script` function, when given, answers first: the text it returns is the code's stdout.
+ * `eval(code)`. A `script` function, when given, answers first: the text it returns is the code's stdout, and an `Error` it returns
+ * is the server's refusal of the code (its message, as a tool error).
  */
 import type { JsonRpcMessage, McpTransport } from "@earendil-works/pi-mcp";
 import { createInMemoryTransportPair } from "@earendil-works/pi-mcp/testing";
@@ -21,7 +22,7 @@ export interface FakeSage {
   transport(): McpTransport;
 }
 
-export function fakeSage(version = "0.9.5", script?: (code: string) => string | undefined): FakeSage {
+export function fakeSage(version = "0.9.5", script?: (code: string) => string | Error | undefined): FakeSage {
   const workspaces = new Map<string, Map<string, string>>();
   const calls: FakeSage["calls"] = [];
   const tools = ["evaluate_sage", "stop_sage_session"].map((name) => ({ name, inputSchema: { type: "object" } }));
@@ -30,6 +31,7 @@ export function fakeSage(version = "0.9.5", script?: (code: string) => string | 
     workspaces.set(session, space);
     const value = (result_type: string, result: string | null, stdout = "") => ({ result_type, result, latex: null, stdout, elapsed_ms: 1.5 });
     const scripted = script?.(code);
+    if (scripted instanceof Error) return scripted;
     if (scripted !== undefined) return value("expression", null, scripted);
     const assignment = /^(\w+)\s*=\s*(.+)$/.exec(code);
     if (assignment) {
