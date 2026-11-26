@@ -48,6 +48,41 @@
           "equals": "error"
         }
       ]
+    },
+    {
+      "name": "a counter loop's invariant",
+      "purpose": "Spacer (set-logic HORN) on x := 0; while x < 10: x := x + 1, with the property x <= 10: sat, and the model defines the invariant inv (plan change CX7, the recipe findInvariant).",
+      "input": {
+        "smtlib": "(set-logic HORN)\n(declare-fun inv (Int) Bool)\n(assert (forall ((s0 Int)) (=> (= s0 0) (inv s0))))\n(assert (forall ((s0 Int) (t0 Int)) (=> (and (inv s0) (and (< s0 10) (= t0 (+ s0 1)))) (inv t0))))\n(assert (forall ((s0 Int)) (=> (and (inv s0) (not (<= s0 10))) false)))\n(check-sat)\n",
+        "model": true
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "sat"
+        },
+        {
+          "path": "model",
+          "matches": "define-fun inv"
+        }
+      ]
+    },
+    {
+      "name": "a small MaxSMT optimum",
+      "purpose": "Optimize with soft constraints: three bits, no two neighbours both set, as many set as possible; one soft constraint is missed. The engine of the recipe findOptimum (plan change CX7), which writes maximize or minimize.",
+      "input": {
+        "smtlib": "(declare-const a Bool)\n(declare-const b Bool)\n(declare-const c Bool)\n(assert (not (and a b)))\n(assert (not (and b c)))\n(assert-soft a :weight 1 :id missed)\n(assert-soft b :weight 1 :id missed)\n(assert-soft c :weight 1 :id missed)\n(check-sat)\n(get-objectives)\n"
+      },
+      "expect": [
+        {
+          "path": "status",
+          "equals": "sat"
+        },
+        {
+          "path": "model",
+          "matches": "\\(objectives\\s+\\(missed 1\\)\\s*\\)"
+        }
+      ]
     }
   ]
 }

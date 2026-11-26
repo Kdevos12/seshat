@@ -331,6 +331,53 @@ The evidence is listed by cutoff and then by the order of the tools (z3, then th
 set of premises is handed to Lean once. The briefing names the provers that answered ("Vampire and E
 proved the goal in the encoded theory..."). The node `first_order_run` records the tools asked (`tools`), and "ATP and SMT found nothing" is said when at least one of them ran.
 
+## Z3 recipes: invariants and small optima (plan change CX7)
+
+Two recipes in `smt-recipes.ts` write SMT-LIB for the same `smt.z3` capability and read its answer strictly. They add
+no capability and no engine: z3's Spacer and Optimize engines were already in the binary, unused.
+
+- `findInvariant(smt, system)` (move E5): a loop or process given as transitions, `{name, vars, init, step, property}`,
+  with integer variables (1 to 8), `init` and `property` over them and `step` over them and their primed copies (`x'`
+  after the step), all in SMT-LIB. `chcScript` writes three Horn clauses for an unknown predicate `inv` under
+  `(set-logic HORN)`: the initial states are in `inv`, a step keeps `inv`, and no state of `inv` breaks the property.
+  z3's `sat` comes with a model that defines `inv`; `readInvariant` accepts exactly one definition of `inv` over as many
+  integers, with a body in the fragment, and writes the Lean statement
+  `: (∀ x : Int, init → inv) ∧ (∀ x x' : Int, inv → step → inv') ∧ (∀ x : Int, inv → property)`.
+  Spacer's `unsat` (a reachable state breaks the property) is the answer `unsafe`: evidence, no claim.
+- `findOptimum(smt, question)`: a small extremal question, `{name, vars, constraints, objective, sense}`, with integer
+  variables (a bit is a variable between 0 and 1), linear or 0/1 constraints and an integer objective. `optimumScript`
+  asserts the constraints, sets `obj` to the objective, asks `(maximize obj)` or `(minimize obj)`, then
+  `(get-objectives)` and the model. `readOptimum` accepts `(objectives (obj V))` with V an integer, and then re-checks
+  z3's point here, with exact integers: it must meet every constraint and reach V. The Lean statement is
+  `: (∃ x : Int, constraints ∧ objective = V) ∧ (∀ x : Int, constraints → objective ≤ V)` (`V ≤ objective` for a
+  minimum). Optimize's `unsat` is the answer `infeasible`; an unbounded optimum (`oo`) gives no statement.
+
+One small syntax tree carries every formula: integers, the given variables, `+ - *`, the comparisons, `and or not =>`,
+`true` and `false`. The user's text and z3's answer are both read into it (`readSexps` takes atoms and parentheses
+only: no string, quoted symbol, comment or keyword), and the SMT-LIB (the variables as `s0`, `t0`, never as the user
+named them) and the Lean text (over `Int`, from integers and the given names only) are both written from it. Anything
+outside the tree, a `let`, an `ite`, a quantifier, `div` or `mod`, another definition beside `inv`, a model point that
+breaks a constraint, is the answer `malformed` with its reason, and gives nothing. Every Lean statement then goes
+through the strict screen (`assertLeanSafe`) and, in the line, `statementProblem` again before it is a claim.
+
+What comes out is evidence at most (Ruling 13): the recipes return outcomes; they write nothing and change no status.
+The lines that use them, M14 (`invariants`, [repair.md](repair.md)) and M8 (`optima`, [induction.md](induction.md)),
+both off by default (empty lists), make each statement an `open` claim with origin `line:M14` or `line:M8`, the
+problem's claim as parent and a `derived_from` edge to it, and record an `smt_recipe` node (`smt-conjectures.ts` in
+`@seshat/induction`: the recipe, the answer, the invariant or the value and its point, the claim) on the new claim, or on
+the problem's claim when there is no statement. A resumed problem reads the node and does not ask z3 again. The claim is
+proved, as any other, by a prover's Lean proof through `validate` (an invariant over linear integer arithmetic is
+usually `omega`'s, an optimum `omega`'s with the point as witness); z3's word that the invariant is inductive or the
+optimum optimal is never the proof. The SMT-LIB screen admits `maximize`, `minimize`, `assert-soft` and
+`get-objectives` for these scripts; none reads or writes a file.
+
+The contract of `smt.z3` has a case for each engine: a counter loop's invariant (the recipe's own script for
+`x := 0; while x < 10: x := x + 1` with the property `x ≤ 10`) and a small MaxSMT optimum (three bits, no two
+neighbours set, `assert-soft` on each: one is missed). Not run against a real z3 (none on the machine that built it):
+the stand-in binary of the tests prints the answers in the format z3 documents, and a test runs the contract and both
+recipes against `Z3_COMMAND` where z3 is installed. Not run either: whether Spacer's invariants for real systems stay
+in the fragment (no `let`), and whether Lean's `omega` proves the statements the recipes write.
+
 ## The line
 
 Things the line does when it is cut short or when Lean is not as expected: an abort of the problem (a budget, a stop) leaves no `battery_run`, `first_order_run` or `search_run` node for the goal it cut, so a resumed run does the goal again, and an interruption raised by `validate` passes through the hook; the battery records one `success` per run (a later answer that raced the abort is `aborted`) and aborts its other checks if the checker throws; a probe that timed out, or whose import failed, learned nothing, so the tactics are not believed present and the host is asked again at the next goal (an answer is kept for its header). The line does not enumerate the `sorry`s of a sketch itself: a hole is worked when the scheduler (M12) has made it a claim joined by `decomposes_into`, which is how a subgoal reaches the line.
@@ -388,7 +435,7 @@ When the battery closed every `sorry`, the harness also checks the completed fil
 posteriors rebuilt from nodes and their order; the first-success stop, the parallel limit, the CPU
 budget and abort; the host probe; the non-triviality test; `solveGoal` against a scripted Lean (a
 refused proof, the allowed refusals, a failed run recorded). The scripted Lean (`test/fake-lean.ts`)
-answers by tactic name and reads the layout of the file, not Lean's syntax. Also: the translation (checked against z3 when it is installed), the process wrapper and the solver readers on shell-script fake binaries, the first-order stage with cutoffs and reconstruction, the search against a scripted goal machine, the line against a fake problem context (options, probe, subgoals, resume, learning across problems, briefing), and a whole run with the simulated Lean (`orchestrator/test/m10.test.ts`).
+answers by tactic name and reads the layout of the file, not Lean's syntax. Also: the translation (checked against z3 when it is installed), the process wrapper and the solver readers on shell-script fake binaries, the Z3 recipes of CX7 (`smt-recipes.test.ts`: the scripts, the statements, every malformed answer giving nothing, the contract of `smt.z3` on a stand-in z3), the first-order stage with cutoffs and reconstruction, the search against a scripted goal machine, the line against a fake problem context (options, probe, subgoals, resume, learning across problems, briefing), and a whole run with the simulated Lean (`orchestrator/test/m10.test.ts`).
 
 The `grind` tactic carries a commutative-ring (Gröbner) module, so the router sends polynomial identities to `ring`, then `grind`; no `polyrith` is assumed, the tactic list is read from the host (plan change PD4 item 1).
 

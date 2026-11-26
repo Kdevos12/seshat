@@ -13,8 +13,11 @@ import { runProcess, type ProcessResult, type ProcessSpec } from "./process.ts";
  */
 export class Refused extends Error {}
 
-/** The commands the translator writes, and the few a model needs besides (a model or a value). */
-const SMT_COMMANDS = new Set(["set-logic", "set-option", "declare-sort", "declare-const", "declare-fun", "define-fun", "define-sort", "assert", "check-sat", "get-unsat-core", "get-model", "get-value", "push", "pop", "set-info"]);
+/**
+ * The commands the translator writes, the few a model needs besides (a model or a value), and z3's Optimize commands
+ * the recipes of `smt-recipes.ts` write (`maximize`, `minimize`, `assert-soft`, `get-objectives`: none reads or writes a file).
+ */
+const SMT_COMMANDS = new Set(["set-logic", "set-option", "declare-sort", "declare-const", "declare-fun", "define-fun", "define-sort", "assert", "check-sat", "get-unsat-core", "get-model", "get-value", "push", "pop", "set-info", "maximize", "minimize", "assert-soft", "get-objectives"]);
 /** The only options a script may set. */
 const SMT_OPTIONS = new Set([":produce-unsat-cores", ":produce-models", ":produce-proofs", ":print-success"]);
 

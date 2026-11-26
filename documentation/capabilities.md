@@ -477,7 +477,8 @@ from the prose. A program that is not installed makes the capability `unavailabl
 lead their own process group, which is killed at the time limit.
 Because a model may write the input, it is screened before a process starts: an SMT-LIB script may only
 declare, assert and ask (`set-logic`, `set-option` of the produce-* options, `declare-*`, `define-*`,
-`assert`, `check-sat`, `get-unsat-core`, `get-model`, `get-value`, `push`, `pop`, `set-info`), so no output
+`assert`, `check-sat`, `get-unsat-core`, `get-model`, `get-value`, `push`, `pop`, `set-info`, and Optimize's
+`maximize`, `minimize`, `assert-soft`, `get-objectives` for the recipes of plan change CX7), so no output
 channel, trace file, `echo` or `include`; a TPTP problem may not `include`. A refused input is answered
 with `status: error` (`result: error`) and `detail: refused: ...`, and no program starts. The program runs
 in a new empty directory (removed afterwards) with `PATH` and `LANG` and a `HOME` that is that directory,
@@ -485,7 +486,10 @@ with `-memory:` (z3) or `-m` (Vampire) from the setting `memoryMb` (default 2048
 exists, an address-space limit of twice that. The page for them is
 [classical.md](classical.md#translation-to-smt-lib-and-tptp). z3 (PyPI's `z3-solver` 5.3.3.0) ran
 through the translator in the tests; Vampire has not run: no binary was available, so its contract
-(2 cases) and its proof parsing are written from its documentation.
+(2 cases) and its proof parsing are written from its documentation. The contract of `smt.z3` has 5 cases, a
+counter loop's invariant (Spacer) and a small MaxSMT optimum (Optimize) among them, run in the tests against a stand-in
+binary and against the real z3 where one is installed; the two engines' cases have not run against a real z3
+([classical.md](classical.md#z3-recipes-invariants-and-small-optima-plan-change-cx7)).
 
 ## `atp.eprover`
 

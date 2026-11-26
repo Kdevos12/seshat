@@ -4,7 +4,9 @@
   "title": "Decide an SMT-LIB script with z3",
   "when": [
     "checking whether a goal over integers, reals and uninterpreted functions follows from hypotheses, by refuting its negation",
-    "getting an unsat core: the hypotheses a proof needs, to hand to grind, aesop or hammer"
+    "getting an unsat core: the hypotheses a proof needs, to hand to grind, aesop or hammer",
+    "finding an inductive invariant of a loop or process given as transitions (set-logic HORN, Spacer): a conjecture to prove in Lean",
+    "a small optimum under linear or 0/1 constraints (maximize, minimize, assert-soft, get-objectives): a candidate value, not a proof that it is optimal"
   ],
   "whenNot": [
     "proving the theorem: unsat is evidence that Lean has not checked, and only a Lean proof settles a claim",
@@ -27,7 +29,7 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 200000,
-        "description": "An SMT-LIB 2 script ending with (check-sat); with (set-option :produce-unsat-cores true), (assert (! F :named n)) and (get-unsat-core) the answer carries the core"
+        "description": "An SMT-LIB 2 script ending with (check-sat); with (set-option :produce-unsat-cores true), (assert (! F :named n)) and (get-unsat-core) the answer carries the core; (set-logic HORN) runs Spacer, and maximize, minimize or assert-soft with (get-objectives) run Optimize, whose objectives come back in model"
       },
       "timeoutSec": {
         "type": "integer",

@@ -221,7 +221,17 @@ theory exploration stops collecting equations past `max(2000, 50 * maxLaws)`; an
 
 Options (`--line-option M8.<name>=<value>`): `conjectures` 20, `rounds` 2, `perRound` 12, `maxNumber` 60,
 `exhaustive` 2, `samples` 40, `minSupport` 3, `classical` true, `identify` true, `testCases` 6, `triviality`
-true, `counterexampleSet` true (false is the measurement arm without the set, PD5), `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000.
+true, `counterexampleSet` true (false is the measurement arm without the set, PD5), `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000, `optima` [].
+
+**Small optima through z3** (plan change CX7, option `optima`, an empty list by default, and then nothing changes): each
+entry is a question `{name, vars, constraints, objective, sense}` in SMT-LIB over integer variables, `sense` `maximize`
+or `minimize`. Before the table, whatever the target is about, each goes once to `smt.z3`'s Optimize engine through the
+recipe `findOptimum` of `@seshat/classical`; an optimum whose point the recipe re-checks becomes an `open` claim with
+origin `line:M8`, a `derived_from` edge to the target and an `smt_recipe` node with the value and the point, and the
+briefing lists it as z3's proposal, not checked by Lean. A malformed, unbounded or `unknown` answer is a node and no
+claim; a host without `smt.z3` runs none, and says so in the log. The recipe, its strict reader and its Lean statement
+are in [classical.md](classical.md#z3-recipes-invariants-and-small-optima-plan-change-cx7); the shared step
+(`smtRecipeConjectures`, `readSmtRecipes`, `smtRecipeBriefing`) is `smt-conjectures.ts`, used by M14's `invariants` too.
 
 Not run: the model's hypotheses are tested with the faux provider, Lean with a simulated `decide`, Sage
 and the OEIS with stand-ins.
@@ -411,6 +421,8 @@ scoring in the sandbox and through a Sage stand-in; a faux-model run that improv
 witness; resume; the budget; the `iid` strategy: one prompt, one island, no resets, the same calls, and the line run with it;
 the local search of CX5: annealing and tabu with a seeded source, each neighborhood's moves, a toy score that reaches its
 target in fewer model rounds with the `bits` neighborhood than without, the same search without a neighborhood whatever the
-local options, a journaled phase replayed by its step count, the phases that say why they do nothing). None of it needs Lean, a model or a network.
+local options, a journaled phase replayed by its step count, the phases that say why they do nothing). `smt-conjectures.test.ts` (M8's `optima` against a
+stand-in `smt.z3`: the open claim, its edge and node, the briefing, a resume that does not ask z3 again, a malformed or
+`unknown` answer that makes no claim, the option off with no call, a host without z3). None of it needs Lean, a model or a network.
 SageMath was not run for these columns; the Sage path is tested against a stand-in that answers as Sage
 prints.

@@ -19,6 +19,7 @@ export * from "./router.ts";
 export * from "./sandbox.ts";
 export * from "./screen.ts";
 export * from "./search.ts";
+export * from "./smt-recipes.ts";
 export * from "./solvers.ts";
 export * from "./solve.ts";
 export * from "./tactics.ts";

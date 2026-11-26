@@ -13,6 +13,7 @@ import { optionReader } from "./options.ts";
 import { type PoolEntry, poolScore, prunePool, relevanceOf } from "./pool.ts";
 import { guessLinearRecurrence, describeRecurrence } from "./recurrence.ts";
 import { statementProblem } from "./screen.ts";
+import { readSmtRecipes, type SmtRecipe, smtRecipeBriefing, smtRecipeConjectures, type SmtRecipeData } from "./smt-conjectures.ts";
 
 const ACTOR = "line:M8";
 
@@ -64,6 +65,11 @@ export const M8_OPTIONS: JsonObject = {
   columns: [],
   /** The limit of the whole run of one program in the sandbox, in milliseconds. */
   programMs: 20_000,
+  /**
+   * Small extremal questions for z3's Optimize (plan change CX7): a list of `{name, vars, constraints, objective, sense}`
+   * in SMT-LIB over integer variables; each optimum becomes an open claim with an `smt_recipe` node. Empty: none, as before.
+   */
+  optima: [],
 };
 
 interface Settings {
@@ -83,6 +89,7 @@ interface Settings {
   briefTop: number;
   columns: ColumnSpec[];
   programMs: number;
+  optima: SmtRecipe[];
 }
 
 export function readM8Options(raw: Readonly<JsonObject>): Settings {
@@ -111,6 +118,7 @@ export function readM8Options(raw: Readonly<JsonObject>): Settings {
     briefTop: o.integer("briefTop", 0, 20),
     columns,
     programMs: o.integer("programMs", 1000, 300_000),
+    optima: readSmtRecipes("M8", raw, "optima", "optimum"),
   };
 }
 
@@ -129,6 +137,8 @@ interface Work {
   entries: PoolEntry[];
   pruned: number;
   headline: string[];
+  /** What the Optimize recipe made (option `optima`). */
+  recipes: SmtRecipeData[];
 }
 
 export interface M8Hooks {
@@ -166,10 +176,19 @@ export function createM8(hooks: M8Hooks = {}): Line {
   async function run(problem: ProblemContext, _held?: ResumedProblem): Promise<void> {
     const s = readM8Options(problem.options);
     const memory = problem.memory.withActor(ACTOR);
-    const work: Work = { entries: [], pruned: 0, headline: [] };
+    const work: Work = { entries: [], pruned: 0, headline: [], recipes: [] };
     works.set(keyOf(problem), work);
     const target = memory.claim(problem.claimId);
     if (target === undefined) return;
+    // The optima do not depend on the target's domain: they run before the table, whatever the statement is about.
+    if (s.optima.length > 0) {
+      try {
+        work.recipes = await smtRecipeConjectures(problem, ACTOR, s.optima);
+      } catch (error) {
+        if (isInterrupted(error) || problem.signal.aborted) throw error;
+        problem.log(`M8: the Optimize recipes failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     const recognized = recognizeStatement(target.statement);
     if (!("statement" in recognized)) {
       problem.log(`M8: the target is not a statement about numbers or magmas (${recognized.reason}); no table`);
@@ -442,6 +461,7 @@ export function createM8(hooks: M8Hooks = {}): Line {
           }
         }
         for (const h of work.headline.slice(0, 5)) lines.push(`Observed on the table: ${h}.`);
+        lines.push(...smtRecipeBriefing(work.recipes));
         return lines.length === 0 ? undefined : { title: "What small cases suggest", text: lines.join("\n") };
       },
     },

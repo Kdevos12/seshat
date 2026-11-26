@@ -68,7 +68,21 @@ hypothesis itself becomes no claim. The provers' briefing says which hypothesis 
 and what the repair costs.
 
 Options (`--line-option M14.<name>=<value>`): `lakatos` true, `maxLakatos` 3, `minRetained` 0.5, `critics` true,
-`maxSuggestions` 2, `maxRepairs` 6, `refine` false.
+`maxSuggestions` 2, `maxRepairs` 6, `refine` false, `invariants` [].
+
+## Invariants through z3 (plan change CX7)
+
+A lemma to speculate, for a statement about a loop or a process (move E5): with the option `invariants` (an empty list by
+default, and then nothing changes), each entry is a transition system `{name, vars, init, step, property}` in SMT-LIB over
+integer variables, the state after a step written `x'`, such as
+`{"name": "counter", "vars": ["x"], "init": "(= x 0)", "step": "(and (< x 10) (= x' (+ x 1)))", "property": "(<= x 10)"}`.
+Before the provers, each goes once to `smt.z3`'s Spacer engine through the recipe `findInvariant` of `@seshat/classical`;
+the invariant z3 returns, read strictly, becomes the Lean statement "it holds initially, a step keeps it, it implies the
+property", an `open` claim with origin `line:M14`, a `derived_from` edge to the problem's claim and an `smt_recipe` node,
+and the briefing lists it as z3's proposal, not checked by Lean. Spacer's `unsat` (the property fails on a reachable
+state), a malformed answer and `unknown` are nodes and no claim. The recipe and its reader are in
+[classical.md](classical.md#z3-recipes-invariants-and-small-optima-plan-change-cx7); the step shared with M8's `optima` is
+`smt-conjectures.ts` of `@seshat/induction`.
 
 ## Tests, and what has not run
 
@@ -77,6 +91,7 @@ placed), `lakatos.test.ts` (an exact exception-barring on the odd numbers with a
 monster-barring where no test separates, the cases with no repair, the statement with its premise, the Lean
 form left out when a column has none) and `m14.test.ts` (a whole problem after line M8: the repaired claim, its
 edge and node, resuming; an informal repair through the step DAG; the suggestions after a failed attempt and their
-cap; the fidelity node). No test needs Lean, a model or a network: the model is the faux provider, and Lean a
+cap; the fidelity node; the `invariants` option against a stand-in `smt.z3`: the open claim and its node, once across a
+resume, no claim from a malformed answer or Spacer's `unsat`, nothing when the option is off). No test needs Lean, a model or a network: the model is the faux provider, and Lean a
 simulated `decide`. Neither the critics nor the repairs have run against a real Lean or model, so the shapes the
 critics look for in Lean's messages are those of the classifier of line M1, not measured on real failures.

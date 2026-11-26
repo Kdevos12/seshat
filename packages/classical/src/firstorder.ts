@@ -13,7 +13,8 @@ import type { ClaimGoal } from "./solve.ts";
 
 /** The first-order tools, as functions; `null` when the host does not offer one. */
 export interface Solvers {
-  smt: ((input: { smtlib: string; timeoutSec: number }, signal?: AbortSignal) => Promise<SmtOutput>) | null;
+  /** `model: true` asks for the model after `sat` (the recipes of `smt-recipes.ts`); the first-order stage never sets it. */
+  smt: ((input: { smtlib: string; timeoutSec: number; model?: boolean }, signal?: AbortSignal) => Promise<SmtOutput>) | null;
   atp: ((input: { tptp: string; timeoutSec: number }, signal?: AbortSignal) => Promise<AtpOutput>) | null;
   /** E (`atp.eprover`), the second prover of the portfolio. Absent or `null` when the host does not offer it. */
   eprover?: ((input: { tptp: string; timeoutSec: number }, signal?: AbortSignal) => Promise<AtpOutput>) | null;

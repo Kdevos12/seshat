@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { LeanSnippet, ValidationReport } from "@seshat/core";
-import { admitCounterexample, buildTable, cegisCounter, createM8, readCounterexamples, M8_OPTIONS, recordTable, REFUTED_HYPOTHESIS_KIND } from "@seshat/induction";
+import { admitCounterexample, buildTable, cegisCounter, createM8, readCounterexamples, M8_OPTIONS, recordTable, REFUTED_HYPOTHESIS_KIND, SMT_RECIPE_KIND, type SmtRecipeData } from "@seshat/induction";
 import type { FinishedAttempt, Line, ProblemContext, SessionContext } from "@seshat/lines";
 import { CapabilityError, type Registry } from "@seshat/registry";
 import { SimulatedDecide } from "../../models/test/simulated-lean.ts";
@@ -194,5 +194,75 @@ describe("the line M14: typed repairs after a failed attempt", () => {
     const fidelity = memory.nodes(REPAIR_FIDELITY_KIND, { claimId }).map((n) => n.data as { score: number; declared: number; found: number });
     assert.equal(fidelity.length, 1);
     assert.deepEqual([fidelity[0]?.score, fidelity[0]?.declared, fidelity[0]?.found], [1, 1, 1]);
+  });
+});
+
+describe("M14's Spacer recipe (option invariants, plan change CX7)", () => {
+  /** x := 0; while x < 10: x := x + 1. The property: x ≤ 10. */
+  const COUNTER = { name: "counter", vars: ["x"], init: "(= x 0)", step: "(and (< x 10) (= x' (+ x 1)))", property: "(<= x 10)" };
+  const SPACER = "(\n  (define-fun inv ((x!0 Int)) Bool\n    (and (<= x!0 10) (>= x!0 0)))\n)";
+  const z3 = (model: string, status = "sat") => {
+    const calls: string[] = [];
+    const r = {
+      hash: "0".repeat(64),
+      host: { host: "test", capabilities: { "smt.z3": { use: ["process"] } } },
+      capability: () => ({}),
+      invoke: async (name: string, input: { smtlib: string }) => {
+        if (name !== "smt.z3") throw new CapabilityError("unavailable", name, `the test host does not offer ${name}`);
+        calls.push(input.smtlib);
+        return { output: { status, model, exitCode: 0, elapsedMs: 2 } };
+      },
+    } as unknown as Registry;
+    return { r, calls };
+  };
+  async function problemOf(registry: Registry, options: Record<string, unknown>) {
+    const memory = openMemory("orchestrator-test");
+    const { claimId } = await memory.ensureClaim({ statement: TARGET, header: "import Mathlib", origin: "bench:t" });
+    const problem = { line: "M14", runId: "r", problemId: "p", claimId, memory, registry, llm: scriptedLlm([{}]), log: () => undefined, signal: new AbortController().signal, options: { ...M14_OPTIONS, ...options } } as unknown as ProblemContext;
+    return { problem, memory, claimId };
+  }
+
+  it("makes the invariant an open conjecture derived from the target, with its smt_recipe node, once", async () => {
+    const { r, calls } = z3(SPACER);
+    const { problem, memory, claimId } = await problemOf(r, { invariants: [COUNTER] });
+    const line = createM14();
+    await hook(line, "beforeProvers")(problem);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0] ?? "", /^\(set-logic HORN\)$/mu);
+    const [claim, ...more] = memory.claims().filter((c) => c.origin === "line:M14");
+    assert.equal(more.length, 0);
+    assert.deepEqual([claim?.status, claim?.kind, claim?.parentId], ["open", "formal", claimId]);
+    assert.equal(claim?.statement, ": (∀ x : Int, (x = 0) → ((x ≤ 10) ∧ (x ≥ 0))) ∧ (∀ x x' : Int, ((x ≤ 10) ∧ (x ≥ 0)) → ((x < 10) ∧ (x' = (x + 1))) → ((x' ≤ 10) ∧ (x' ≥ 0))) ∧ (∀ x : Int, ((x ≤ 10) ∧ (x ≥ 0)) → (x ≤ 10))");
+    assert.ok(memory.edges({ from: claim?.claimId as string, kinds: ["derived_from"] }).some((e) => e.to[0] === claimId));
+    const data = memory.nodes(SMT_RECIPE_KIND, { claimId: claim?.claimId as string })[0]?.data as unknown as SmtRecipeData;
+    assert.deepEqual([data.recipe, data.answer, data.invariant], ["invariant", "invariant", "(and (<= s0 10) (>= s0 0))"]);
+    const text = (await hook(line, "briefing")({ ...problem } as unknown as SessionContext))?.text ?? "";
+    assert.match(text, /z3 \(Spacer\) proposes an inductive invariant of counter; it is an open claim, not checked by Lean/);
+    assert.ok(memory.claims().every((c) => c.status === "open"));
+    await hook(line, "resumeProblem")(problem, undefined as never);
+    assert.equal(calls.length, 1, "a resumed problem does not ask z3 again");
+    assert.equal(memory.nodes(SMT_RECIPE_KIND).length, 1);
+  });
+
+  it("makes no claim of a malformed answer or of Spacer's unsat", async () => {
+    for (const [model, status, answer] of [["(\n (define-fun inv ((x!0 Int)) Bool (let ((a!1 x!0)) (<= a!1 10)))\n)", "sat", "malformed"], ["", "unsat", "unsafe"]] as const) {
+      const { problem, memory, claimId } = await problemOf(z3(model, status).r, { invariants: [COUNTER] });
+      await hook(createM14(), "beforeProvers")(problem);
+      assert.equal(memory.claims().filter((c) => c.origin === "line:M14").length, 0);
+      const data = memory.nodes(SMT_RECIPE_KIND, { claimId })[0]?.data as unknown as SmtRecipeData;
+      assert.deepEqual([data.answer, data.claimId, data.statement], [answer, undefined, undefined]);
+    }
+  });
+
+  it("is off by default: no z3 call, no node, and the options read as before", async () => {
+    assert.deepEqual(M14_OPTIONS.invariants, []);
+    const { r, calls } = z3(SPACER);
+    const { problem, memory } = await problemOf(r, {});
+    await hook(createM14(), "beforeProvers")(problem);
+    assert.equal(calls.length, 0);
+    assert.equal(memory.nodes(SMT_RECIPE_KIND).length, 0);
+    const { invariants: _, ...older } = M14_OPTIONS;
+    assert.deepEqual(readM14Options(older).invariants, []);
+    assert.throws(() => readM14Options({ ...M14_OPTIONS, invariants: [{ ...COUNTER, property: "(<= x' 10)" }] }), /M14\.invariants\[0\]\.property/);
   });
 });

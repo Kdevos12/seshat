@@ -202,6 +202,7 @@ flowchart TB
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
   graphhunt["Graph counterexamples (M11.graphs, off)<br/>model-written predicate, batteries to 8 vertices,<br/>local search, families, Lean templates<br/>lean/SeshatLib/Finite"]:::wait
   satenc["SAT encoders (M11.sat, off)<br/>magmas and graphs, lex-leader CNF,<br/>python-sat; UNSAT is evidence only"]:::wait
+  z3recipes["Z3 recipes (CX7: M14.invariants, M8.optima, off)<br/>Spacer invariants, Optimize optima,<br/>read strictly; open conjectures"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   libbuilder["LibraryBuilder (off by default)<br/>coding agent in a sandbox,<br/>files added to lean/SeshatLib"]:::wait
   libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
@@ -249,7 +250,7 @@ flowchart TB
     findstat["findstat_identify<br/>FindStat"]:::wait
     litsearch["lit_search<br/>OpenAlex, arXiv, Semantic Scholar,<br/>zbMATH, bench metadata"]:::real
     decide["decide_ask<br/>Jev, a decision-only<br/>model, only to order"]:::wait
-    smtz3["smt_z3<br/>z3 on SMT-LIB, unsat core"]:::built
+    smtz3["smt_z3<br/>z3 on SMT-LIB, unsat core,<br/>Spacer and Optimize engines"]:::built
     vampire["atp_vampire<br/>Vampire on TPTP, SZS status"]:::wait
     eprover["atp_eprover<br/>E on TPTP, SZS status"]:::wait
     proveauto["prove_auto<br/>the battery on one goal"]:::wait
@@ -363,6 +364,10 @@ flowchart TB
   m8 -->|"refuted hypotheses<br/>and their tables"| m14
   m14 -->|"repaired claims,<br/>open, with their concept"| journal
   m14 -->|"repair suggestions<br/>for the next session"| provers
+  m14 -->|"transition systems,<br/>option M14.invariants"| z3recipes
+  m8 -->|"extremal questions,<br/>option M8.optima"| z3recipes
+  z3recipes -->|"HORN clauses,<br/>maximize, minimize"| smtz3
+  z3recipes -->|"open claims derived<br/>from the target, smt_recipe nodes"| journal
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
   provers -.->|"--tool, or when Sage<br/>does not answer"| python

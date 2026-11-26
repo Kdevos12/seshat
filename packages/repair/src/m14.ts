@@ -1,5 +1,5 @@
 import { type Json } from "@seshat/core";
-import { dependencyMatch, type Hypothesis, proposeHypothesisDag, readTables, recordHypothesisDag, type RefutedHypothesis, REFUTED_HYPOTHESIS_KIND, optionReader, statementProblem, estimateTokens, STEP_TOKENS, readCounterexamples, recordDrop } from "@seshat/induction";
+import { dependencyMatch, type Hypothesis, proposeHypothesisDag, readTables, recordHypothesisDag, type RefutedHypothesis, REFUTED_HYPOTHESIS_KIND, optionReader, statementProblem, estimateTokens, STEP_TOKENS, readCounterexamples, recordDrop, readSmtRecipes, type SmtRecipe, smtRecipeBriefing, smtRecipeConjectures, type SmtRecipeData } from "@seshat/induction";
 import { type Briefing, type FinishedAttempt, isInterrupted, type JsonObject, type Line, type ProblemContext, type ResumedProblem } from "@seshat/lines";
 import { classifyFailure, type FailureClass, type MemoryStore } from "@seshat/memory";
 import { recognizeStatement } from "@seshat/models";
@@ -27,6 +27,12 @@ export const M14_OPTIONS: JsonObject = {
   maxRepairs: 6,
   /** Ask a model for the step DAG of the repair, before anything is formalized (plan change PC11 item 2). */
   refine: false,
+  /**
+   * Loops or processes for z3's Spacer (plan change CX7, move E5): a list of `{name, vars, init, step, property}` in
+   * SMT-LIB over integer variables (`x'` after a step); each invariant becomes an open claim with an `smt_recipe` node,
+   * a lemma to speculate. Empty: none, as before.
+   */
+  invariants: [],
 };
 
 interface Settings {
@@ -37,6 +43,7 @@ interface Settings {
   maxSuggestions: number;
   maxRepairs: number;
   refine: boolean;
+  invariants: SmtRecipe[];
 }
 
 export function readM14Options(raw: Readonly<JsonObject>): Settings {
@@ -49,6 +56,7 @@ export function readM14Options(raw: Readonly<JsonObject>): Settings {
     maxSuggestions: o.integer("maxSuggestions", 1, 4),
     maxRepairs: o.integer("maxRepairs", 0, 100),
     refine: o.flag("refine"),
+    invariants: readSmtRecipes("M14", raw, "invariants", "invariant"),
   };
 }
 
@@ -62,6 +70,8 @@ interface Work {
   made: Made[];
   suggestions: Suggestion[];
   given: number;
+  /** What the Spacer recipe made (option `invariants`). */
+  recipes: SmtRecipeData[];
   dag?: { critic: string; dag: Parameters<typeof dependencyMatch>[0] } | undefined;
 }
 
@@ -97,7 +107,7 @@ export function createM14(): Line {
   const keyOf = (p: ProblemContext): string => `${p.runId}/${p.problemId}`;
   const workOf = (p: ProblemContext): Work => {
     let work = works.get(keyOf(p));
-    if (work === undefined) works.set(keyOf(p), (work = { made: [], suggestions: [], given: 0 }));
+    if (work === undefined) works.set(keyOf(p), (work = { made: [], suggestions: [], given: 0, recipes: [] }));
     return work;
   };
 
@@ -184,6 +194,14 @@ export function createM14(): Line {
         problem.log(`M14: failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+    if (s.invariants.length > 0) {
+      try {
+        workOf(problem).recipes = await smtRecipeConjectures(problem, ACTOR, s.invariants);
+      } catch (error) {
+        if (isInterrupted(error) || problem.signal.aborted) throw error;
+        problem.log(`M14: the Spacer recipes failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
 
   return {
@@ -243,6 +261,7 @@ export function createM14(): Line {
         for (const m of work.made.slice(0, 3)) {
           lines.push(`Small cases refuted "${m.hypothesis}". Repaired by a ${m.option.kind.replace("_", "-")}: ${m.option.informal}${m.option.exact ? "" : ` (it also leaves out ${m.option.lost} object(s) where it held)`}. This is an open claim${m.option.statement !== undefined ? `: ${m.option.statement}` : ""}.`);
         }
+        lines.push(...smtRecipeBriefing(work.recipes));
         for (const sg of work.suggestions) lines.push(`Repair suggested by the last failure (${sg.reason}): ${sg.directive}`);
         return lines.length === 0 ? undefined : { title: "Repairs", text: lines.join("\n") };
       },
