@@ -224,7 +224,7 @@ theory exploration stops collecting equations past `max(2000, 50 * maxLaws)`; an
 
 Options (`--line-option M8.<name>=<value>`): `conjectures` 20, `rounds` 2, `perRound` 12, `maxNumber` 60,
 `exhaustive` 2, `samples` 40, `minSupport` 3, `classical` true, `identify` true, `testCases` 6, `triviality`
-true, `counterexampleSet` true (false is the measurement arm without the set, PD5), `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000, `optima` [], `guess` true (CX8; it does
+true, `counterexampleSet` true (false is the measurement arm without the set, PD5), `leanTimeoutSec` 30, `briefTop` 5, `columns` [], `programMs` 20 000, `optima` [], `guess` false (CX8, off by default like the other CX stages; when true it does
 anything only on a host that offers `compute.python`), `guessSec` 60 (5 to 600, the limit of one guessing call, the
 interpreter's start included).
 

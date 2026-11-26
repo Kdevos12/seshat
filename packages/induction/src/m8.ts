@@ -74,9 +74,9 @@ export const M8_OPTIONS: JsonObject = {
   /**
    * Guessing and growth through `compute.python` (plan change CX8): for each integer column, sympy's `rsolve` on the recurrence
    * guessed from it, and a Richardson fit of its growth, each answer an open conjecture once it agrees with every known term.
-   * Only when the host offers `compute.python` (never sent to Sage); without it, or false, M8 is as before.
+   * Only when the host offers `compute.python` (never sent to Sage); without it, or false (the default, as every new behaviour of plan change CX), M8 is as before.
    */
-  guess: true,
+  guess: false,
   /** The limit of one guessing call, the interpreter's start included, in seconds. */
   guessSec: 60,
 };

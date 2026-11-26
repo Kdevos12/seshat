@@ -161,7 +161,7 @@ async function problemOf(registry: Registry, options: Record<string, unknown> = 
     llm,
     log: (text: string) => logs.push(text),
     signal: new AbortController().signal,
-    options: { ...M8_OPTIONS, triviality: false, rounds: 0, maxNumber: 40, columns: COLUMNS, ...options },
+    options: { ...M8_OPTIONS, guess: true, triviality: false, rounds: 0, maxNumber: 40, columns: COLUMNS, ...options },
   } as unknown as ProblemContext;
   return { problem, memory, claimId, logs };
 }
@@ -237,6 +237,7 @@ describe("CX8 in line M8, with a fake compute.python", () => {
       nodes: ["datatable", "recurrence", "conjecture_pool", "identification", COUNTEREXAMPLE_KIND, CEGIS_DROP_KIND, SEQUENCE_GUESS_KIND].map((k) => memory.nodes(k).map((n) => JSON.stringify(n.data).replace(/clm_[0-9A-Z]+/gu, "clm").replace(/"key":"[0-9a-f]+"/gu, '"key"'))),
       edges: memory.claims().flatMap((c) => memory.edges({ from: c.claimId }).map((e) => `${e.kind} ${e.note ?? ""}`)).sort(),
     });
+    assert.equal(M8_OPTIONS.guess, false, "off by default, like the other stages of plan change CX");
     const off = registryOf(["compute.python"], good);
     const a = await problemOf(off, { guess: false });
     await before(createM8())(a.problem);
@@ -254,7 +255,7 @@ describe("CX8 in line M8, with a fake compute.python", () => {
     assert.deepEqual(shape(c.memory), sa);
     assert.ok(sa.nodes[6]?.length === 0);
     // Options written before CX8, without `guess` and `guessSec`, read the defaults.
-    assert.equal(readM8Options(Object.fromEntries(Object.entries(M8_OPTIONS).filter(([k]) => k !== "guess" && k !== "guessSec"))).guess, true);
+    assert.equal(readM8Options(Object.fromEntries(Object.entries(M8_OPTIONS).filter(([k]) => k !== "guess" && k !== "guessSec"))).guess, false);
     assert.throws(() => readM8Options({ ...M8_OPTIONS, guessSec: 1 }), /option M8\.guessSec is an integer from 5 to 600/);
   });
 
