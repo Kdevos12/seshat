@@ -1,5 +1,5 @@
 import type { LeanChecker } from "@seshat/core";
-import { type HostTactics, isUnknownTactic, probeSnippet, TACTICS } from "./tactics.ts";
+import { type HostTactics, isRetiredTactic, isUnknownTactic, probeSnippet, TACTICS } from "./tactics.ts";
 
 const IMPORT_FAILURE = /unknown module prefix|bad import|object file .* does not exist|unknown package|failed to read file|invalid import/iu;
 
@@ -16,7 +16,7 @@ export interface HostProbe extends HostTactics {
  * <tactic>` for each: a parse error ("unknown tactic", "expected ...") says the syntax is not there,
  * and any other answer (success, or a tactic that fails on this goal) says it is. The battery's
  * tactic list is read this way and never assumed, `polyrith` included: whether Mathlib still has it
- * is the host's answer. `known` names `needs` to take as present without asking (a host-profile option).
+ * is the host's answer, and a tactic that says it is no longer available (`polyrith` since its service shut down) is missing. `known` names `needs` to take as present without asking (a host-profile option).
  */
 export async function probeHost(checker: LeanChecker, options: { header?: string; known?: readonly string[]; signal?: AbortSignal; timeoutSec?: number } = {}): Promise<HostProbe> {
   const have = new Set<string>(options.known ?? []);
@@ -33,7 +33,7 @@ export async function probeHost(checker: LeanChecker, options: { header?: string
     if (r === undefined || r.status === "server_error" || r.status === "repl_error" || r.status === "timeout" || r.messages.some((m) => m.severity === "error" && IMPORT_FAILURE.test(m.text))) {
       // Nothing was learned about the tactic: a timeout or a failed import says nothing about its syntax.
       unreachable = r?.error ?? (r?.status === "timeout" ? "the probe timed out" : r === undefined ? "Lean did not answer" : (r.messages.find((m) => IMPORT_FAILURE.test(m.text))?.text ?? "Lean could not elaborate the probe").slice(0, 200));
-    } else if (isUnknownTactic(r)) {
+    } else if (isUnknownTactic(r) || isRetiredTactic(r)) {
       if (!missing.includes(needs)) missing.push(needs);
     } else {
       have.add(needs);

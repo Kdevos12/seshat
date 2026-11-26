@@ -62,7 +62,7 @@ describe("what the sets turn on, from one source", () => {
     const all = describeSet("v2").join("; ");
     for (const part of ["edit tool", "intake gate", "compute.sage", "lean.search", "repeat rule"]) assert.match(all, new RegExp(part));
     assert.deepEqual(describeSet("v1"), []);
-    assert.match(describeSet("v2", () => false).join("; "), /compute\.sage.*does not offer it.*lean\.search.*does not offer it.*lean\.lsp.*does not offer it/s);
+    assert.match(describeSet("v2", () => false).join("; "), /compute\.sage, else compute\.python.*offers none.*lean\.search.*does not offer it.*lean\.lsp.*does not offer it/s);
   });
 
   it("turns on the probe's extension in v2 and not in v1: the gate of v1 is what it was", () => {
@@ -83,7 +83,7 @@ describe("what the sets turn on, from one source", () => {
     const none = resolveAdditions({}, "v2", effectiveSwitches({}, "v2") as { autoTool: boolean; leanSearch: boolean }, "local", () => false);
     assert.deepEqual([none.autoTool, none.leanSearch], [false, false]);
     assert.equal(none.notes.length, 3);
-    assert.match(none.notes.join("\n"), /v2 defaults has nothing to add: host local does not offer compute\.sage[\s\S]*lean\.search; the run goes on without it/);
+    assert.match(none.notes.join("\n"), /v2 defaults has nothing to add: host local offers no compute tool \(compute\.sage, compute\.python\)[\s\S]*lean\.search; the run goes on without it/);
     const both = resolveAdditions({}, "v2", { autoTool: true, leanSearch: true }, "local", () => true);
     assert.deepEqual([both.autoTool, both.leanSearch, both.notes.length], [true, true, 0]);
     const lsp = (offers: boolean, defaults: "v1" | "v2") => resolveAdditions({}, defaults, effectiveSwitches({}, defaults) as { autoTool: boolean; leanSearch: boolean; leanLsp: boolean }, "local", (c) => c === "lean.lsp" && offers);

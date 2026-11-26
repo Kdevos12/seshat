@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { HarnessEvent } from "@seshat/core";
+import type { Line, ProblemContext } from "@seshat/lines";
 import { createM12Line } from "@seshat/scheduler";
-import { BP_AUX, BP_PROOF } from "./blueprint-helpers.ts";
+import { BP_AUX, BP_PROOF, HARD_AUX } from "./blueprint-helpers.ts";
 import { liftAnswer } from "./lift-helpers.ts";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { check, DemoLean, demoRun, ofType, say } from "./m0-helpers.ts";
@@ -108,7 +109,7 @@ induction n with
 
   it("sends a draft whose extracted statement does not compile to the first refinement round", { timeout: 60000 }, async () => {
     // `intro _` names nothing: the statement extract_goal prints has `x✝`, which Lean cannot read back.
-    const proof = "intro _\n-- step 1: zero on the right\nhave h_1 : n + 0 = n := by sorry\nexact main_ok";
+    const proof = "intro _\n-- step 1: zero on the right\nhave h_1 : n + 0 = 0 + n := by sorry\nexact main_ok";
     const { events, faux } = await run([...informal, draftOf(proof), answer(BP_AUX, BP_PROOF), check("exact bad"), say("Notes.")]);
     assert.equal(faux.getPendingResponseCount(), 0);
     const [draft, round1] = nodes(events, "m12_sketch");
@@ -119,6 +120,27 @@ induction n with
     assert.equal(round1?.fromInformal, undefined);
     assert.equal(round1?.refinedFrom, draft?.nodeId);
     assert.equal(round1?.healthy, true);
+  });
+
+  it("sends a draft whose first step is the theorem itself to the first refinement round (run 7, VL1)", { timeout: 60000 }, async () => {
+    const proof = "-- step 1: the theorem\nhave h_1 :  n + 0  = n := by sorry\nexact h_1";
+    const { events, faux } = await run([...informal, draftOf(proof), answer(BP_AUX, BP_PROOF), check("exact bad"), say("Notes.")]);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [draft, round1] = nodes(events, "m12_sketch");
+    assert.equal(draft?.healthy, false);
+    assert.match(String(draft?.problem), /leaves the theorem itself as its step h_1/);
+    assert.equal(round1?.round, 1);
+  });
+
+  it("keeps a draft whose last step restates the theorem after other steps: it combines them, which it has as hypotheses", { timeout: 60000 }, async () => {
+    // `main_ok` is the simulated Lean's word for a main proof that closes the target from its steps.
+    const proof = "-- step 1: zero on the right\nhave h_1 : 1 * n = n := by sorry\n-- step 2: the theorem, from step 1\nhave h_2 :  n + 0  = n := by sorry\nexact main_ok";
+    const { events, faux } = await run([...informal, draftOf(proof), check("exact bad"), say("Notes.")]);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [draft, ...more] = nodes(events, "m12_sketch");
+    assert.equal(more.length, 0);
+    assert.equal(draft?.healthy, true, String(draft?.problem ?? draft?.errors));
+    assert.deepEqual(draft?.names, ["aux_h_1", "aux_h_2"]);
   });
 
   it("sends a draft Lean refuses to the first refinement round, and a draft with no proof makes no record", { timeout: 60000 }, async () => {
@@ -218,5 +240,197 @@ describe("several drafts, ranked for free (DP3)", () => {
     assert.deepEqual(ofType(skipped.events, "budget.gated").map((e) => e.data).filter((g) => g.site === "task").map((g) => g.action), ["skip"]);
     assert.equal(planned(skipped.events).length, 0);
     assert.equal(nodes(skipped.events, "m12_sketch").length, 0);
+  });
+});
+
+/** A blueprint with one hole that nothing proves (`aux_hard`, with its informal step) and one the battery closes (`aux_third`). */
+const HARD_BLUEPRINT = `-- step 1: two commutes with n\n${HARD_AUX}\n\nlemma aux_third (n : ℕ) : n * 1 = n := by\n  sorry`;
+const HARD_PROOF = "exact main_ok aux_hard aux_third";
+/** The local redraft of `aux_hard` (DP7): two steps, which the lifter makes two holes on aux_hard's own file. */
+const SUB = `-- step 1: two is one plus one
+have h_1 : n + 2 = n + 1 + 1 := by sorry
+-- step 2: regroup
+have h_2 : n + 1 + 1 = 2 + n := by sorry
+exact main_ok`;
+/** What a refinement round writes for the hard blueprint: aux_hard split in two (case b). */
+const SPLIT_AUX = `-- refines: aux_hard
+lemma aux_s1 (n : ℕ) : n + 2 = n + 1 + 1 := by
+  sorry
+
+-- refines: aux_hard
+lemma aux_s2 (n : ℕ) : n + 1 + 1 = 2 + n := by
+  sorry
+
+lemma aux_third (n : ℕ) : n * 1 = n := by
+  sorry`;
+
+/** M12 with some of its problem's context replaced in the hooks that take it: what a test of the line's side of the gate, or of a session's stop, needs. */
+function withContext(patch: (problem: ProblemContext) => Partial<ProblemContext>): Line {
+  const line = createM12Line();
+  const wrap = (problem: ProblemContext): ProblemContext => Object.assign(Object.create(problem) as ProblemContext, patch(problem));
+  const hooks = { ...line.hooks } as Record<string, unknown>;
+  for (const key of ["beforeProvers", "resumeProblem", "afterAttempt", "schedule", "afterProblem"] as const) {
+    const hook = line.hooks[key] as ((problem: ProblemContext, ...rest: unknown[]) => unknown) | undefined;
+    if (hook !== undefined) hooks[key] = (problem: ProblemContext, ...rest: unknown[]) => hook(wrap(problem), ...rest);
+  }
+  return { ...line, hooks: hooks as Line["hooks"] };
+}
+
+/** A run whose outer session writes the hard blueprint, with M12's hole sessions on (no informal proof, so no first draft). */
+async function hard(responses: unknown[], config: Record<string, unknown> = {}, options: Record<string, unknown> = {}, line: Line = createM12Line()) {
+  return await demoRun({
+    lines: { M12: line },
+    config: {
+      lines: ["M12"], provers: 1, sessions: 1, triage: true, longProof: {}, ...config,
+      lineOptions: { M12: { blueprints: true, refine: false, holeSessions: 1, rounds: 1, ageRatio: 1, weightRatio: 0, ...options } },
+    },
+    lean: new DemoLean(liftAnswer),
+    responses: [check(HARD_PROOF, HARD_BLUEPRINT), say("Two lemmas are left."), ...responses] as never,
+  });
+}
+
+const claimOf = (events: readonly HarnessEvent[], gloss: string) => ofType(events, "claim.created").find((e) => e.actor === "line:M12" && (e.data.gloss ?? "").startsWith(gloss))?.data;
+const statusOf = (events: readonly HarnessEvent[], claimId: unknown) => ofType(events, "claim.status_changed").filter((e) => e.data.claimId === claimId).map((e) => e.data.to);
+
+describe("local recursion on a hole that is too hard (DP7)", () => {
+  it("drafts a hole that ended too hard as a blueprint on its claim; its holes get sessions, and Lean proves the hole and then the target through validate", { timeout: 60000 }, async () => {
+    const prompts: string[] = [];
+    const { events, faux } = await hard([
+      say("I cannot do this."), // the session on aux_hard: too_hard, the model said so (aux_third is closed by the battery)
+      ((c: Context) => { prompts.push(sessionPromptOf(c)); return draftOf(SUB); }) as never,
+      check("exact hole_ok"),
+      check("exact hole_ok"),
+    ]);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const hardClaim = claimOf(events, "aux_hard")?.claimId;
+    const target = ofType(events, "problem.registered")[0]?.data.claimId;
+    const [top, sub, ...more] = nodes(events, "m12_sketch");
+    assert.equal(more.length, 0);
+    assert.equal(top?.redraftOf, undefined);
+    assert.equal(sub?.redraftOf, hardClaim, "the redraft is registered on the hole's claim");
+    assert.deepEqual([sub?.healthy, sub?.registered, sub?.lifted, sub?.fromInformal, sub?.planner, sub?.round, sub?.attemptId], [true, true, true, true, true, undefined, `aux_hard@${String(hardClaim).slice(-6)}:draft`]);
+    assert.deepEqual(sub?.names, ["aux_h_1", "aux_h_2"]);
+    // Its holes are claims under the hole, with a `decomposes_into` edge from the hole that Lean checked (the link lemma, as for any blueprint).
+    const subHoles = sub?.holes as string[];
+    assert.ok(subHoles.every((id) => ofType(events, "claim.created").find((e) => e.data.claimId === id)?.data.parentId === hardClaim));
+    const edge = ofType(events, "edge.added").find((e) => e.data.kind === "decomposes_into" && e.data.from === hardClaim && subHoles.every((h) => (e.data.to as string[]).includes(h)));
+    assert.ok(edge !== undefined, "an edge from the hole to its redraft's holes");
+    assert.equal(sub?.edgeId, edge?.data.edgeId);
+    assert.ok(ofType(events, "edge.status_changed").some((e) => e.data.edgeId === edge?.data.edgeId && e.data.to === "lean_checked"), "its link lemma is checked by Lean");
+    // The hole had its one session; each of the redraft's holes had one.
+    const sessions = nodes(events, "m12_session");
+    assert.deepEqual(sessions.map((n) => [n.claimId, n.verdict]), [[hardClaim, "too_hard"], [subHoles[0], "proved"], [subHoles[1], "proved"]]);
+    // The hole, then the target, are accepted only through validate: a composed proof of each, which Lean checked.
+    for (const id of [hardClaim, target]) {
+      assert.deepEqual(statusOf(events, id).slice(0, 1), ["computed"], String(id));
+      assert.ok(nodes(events, "derivation").some((d) => d.claimId === id && d.verdict === "valid"), `a derivation of ${String(id)} that validate accepted`);
+      const change = ofType(events, "claim.status_changed").find((e) => e.data.claimId === id);
+      assert.ok(ofType(events, "validation.finished").some((v) => v.data.validationId === change?.data.validationId && v.data.verdict === "valid"));
+    }
+    // One planner call, the draft's prompt with the hole as the target and its informal step quoted as unchecked data; in the problem's ledger.
+    const [call, ...rest] = planned(events);
+    assert.equal(rest.length, 0);
+    assert.equal(call?.data.line, "M12");
+    assert.match(prompts[0] ?? "", /Draft prompt draft-1\. /);
+    assert.match(prompts[0] ?? "", /theorem target \(n : ℕ\) : n \+ 2 = 2 \+ n/);
+    assert.match(prompts[0] ?? "", /checked by no one and not by Lean/);
+    assert.match(prompts[0] ?? "", /> step 1: two commutes with n/);
+  });
+
+  it("is off with depth 0 and without longProof: the hole that ended too hard goes to the refinement round, as before", { timeout: 60000 }, async () => {
+    const responses = [say("I cannot do this."), answer(SPLIT_AUX, "exact main_ok aux_s1 aux_s2 aux_third"), check("exact hole_ok"), check("exact hole_ok")];
+    for (const config of [{ longProof: { depth: 0 } }, { longProof: undefined, triage: false }]) {
+      const { events, faux } = await hard(responses, config, { refine: true });
+      assert.equal(faux.getPendingResponseCount(), 0);
+      const sketches = nodes(events, "m12_sketch");
+      assert.equal(sketches.length, 2, JSON.stringify(config));
+      assert.ok(sketches.every((r) => r.redraftOf === undefined));
+      assert.equal(sketches[1]?.round, 1, "case b: a refinement round splits it");
+      assert.deepEqual(sketches[1]?.names, ["aux_s1", "aux_s2", "aux_third"]);
+      assert.equal(planned(events).length, 1);
+    }
+  });
+
+  it("never nests past the depth: with depth 1 a hole of the redraft that ends too hard gets no redraft of its own; with depth 2 it does", { timeout: 60000 }, async () => {
+    const shallow = await hard([say("I cannot do this."), draftOf(SUB), say("I cannot do this either."), check("exact hole_ok")]);
+    assert.equal(shallow.faux.getPendingResponseCount(), 0);
+    assert.equal(planned(shallow.events).length, 1, "one redraft, of aux_hard");
+    const records = nodes(shallow.events, "m12_sketch");
+    assert.equal(records.length, 2);
+    const [first] = records[1]?.holes as string[];
+    assert.deepEqual(nodes(shallow.events, "hole_verdict").filter((v) => v.claimId === first).map((v) => v.verdict), ["too_hard"]);
+    // Depth 2: the hole of the redraft is redrafted too, as soon as its session ends (here a draft Lean refuses, recorded on its claim and not healthy).
+    const deep = await hard([say("I cannot do this."), draftOf(SUB), say("I cannot do this either."), draftOf("have h_1 : 1 * n = n := by bad_tactic\nexact main_ok"), check("exact hole_ok")], { longProof: { depth: 2 } });
+    assert.equal(deep.faux.getPendingResponseCount(), 0);
+    assert.equal(planned(deep.events).length, 2);
+    const [, sub, subSub, ...more] = nodes(deep.events, "m12_sketch");
+    assert.equal(more.length, 0);
+    assert.equal(subSub?.redraftOf, (sub?.holes as string[])[0]);
+    assert.equal(subSub?.attemptId, `aux_h_1@${(sub?.holes as string[])[0]?.slice(-6)}:draft`, "named by the hole's name and its claim id");
+    assert.equal(subSub?.healthy, false);
+    assert.match(String(subSub?.problem), /the draft proof has errors Lean reports/);
+  });
+
+  it("gives no redraft to a hole whose session the budget stopped, and a redraft Lean refuses leaves the hole to the refinement round", { timeout: 60000 }, async () => {
+    // The session's end as a stop for the money, the problem's budget not spent: too_hard with the reason budget.
+    const budget = withContext((problem) => ({ holeSession: async (request) => ({ ...(await problem.holeSession!(request)), stop: "budget" as const }) }));
+    const stopped = await hard([say("I cannot do this.")], {}, {}, budget);
+    assert.equal(stopped.faux.getPendingResponseCount(), 0);
+    assert.deepEqual(nodes(stopped.events, "hole_verdict").filter((v) => v.verdict === "too_hard").map((v) => v.reason), ["budget"]);
+    assert.equal(planned(stopped.events).length, 0);
+    assert.equal(nodes(stopped.events, "m12_sketch").length, 1);
+    // A redraft that Lean refuses is recorded on the hole and not healthy; the refinement round then revises the problem's blueprint (case b), as before.
+    const refused = await hard(
+      [say("I cannot do this."), draftOf("have h_1 : 1 * n = n := by bad_tactic\nexact main_ok"), answer(SPLIT_AUX, "exact main_ok aux_s1 aux_s2 aux_third"), check("exact hole_ok"), check("exact hole_ok")],
+      {}, { refine: true },
+    );
+    assert.equal(refused.faux.getPendingResponseCount(), 0);
+    const [top, sub, round] = nodes(refused.events, "m12_sketch");
+    assert.deepEqual([sub?.redraftOf !== undefined, sub?.healthy, sub?.registered], [true, false, true]);
+    assert.deepEqual([round?.round, round?.refinedFrom], [1, top?.nodeId], "the round revises the problem's blueprint, not the redraft");
+  });
+
+  it("leaves a hole whose redraft's link lemma Lean did not accept to the refinement round: that redraft can never derive it", { timeout: 60000 }, async () => {
+    // The second link lemma checked is the redraft's (the first is the problem's blueprint's): it is refused, as Lean would refuse a link that does not close.
+    const links: string[] = [];
+    const line = withContext((problem) => ({
+      validate: async (request) => {
+        const claim = problem.memory.claim(request.claimId);
+        if ((claim?.gloss ?? "").startsWith("link lemma") && !links.includes(request.claimId)) links.push(request.claimId);
+        if (links[1] === request.claimId) return { verdict: "invalid", status: claim?.status ?? "open", reasons: ["lean: 1 error(s)"] };
+        return await problem.validate(request);
+      },
+    }));
+    const { events, faux } = await hard(
+      [say("I cannot do this."), draftOf(SUB), answer(SPLIT_AUX, "exact main_ok aux_s1 aux_s2 aux_third"), check("exact hole_ok"), check("exact hole_ok")],
+      {}, { refine: true }, line,
+    );
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const [top, sub, round, ...more] = nodes(events, "m12_sketch");
+    assert.equal(more.length, 0);
+    assert.deepEqual([sub?.redraftOf !== undefined, sub?.healthy, sub?.registered], [true, true, true]);
+    assert.ok(!ofType(events, "edge.status_changed").some((e) => e.data.edgeId === sub?.edgeId && e.data.to === "lean_checked"), "the redraft's edge is not checked");
+    // The redraft's holes get no session (the round's split may name the same statements: none before it); the round splits the hole (case b).
+    const recorded = ofType(events, "node.recorded");
+    const roundAt = recorded.findIndex((e) => e.data.nodeId === round?.nodeId);
+    assert.ok(!recorded.slice(0, roundAt).some((e) => e.data.kind === "m12_session" && (sub?.holes as string[]).includes((e.data.data as { claimId?: string }).claimId ?? "")));
+    assert.deepEqual([round?.round, round?.refinedFrom], [1, top?.nodeId]);
+  });
+
+  it("asks the problem's budget gate before its planner call: a skip stops the recursion, with no call and no spend, and the gate is asked once", { timeout: 60000 }, async () => {
+    const asked: Array<{ site: string; estimateUsd: number }> = [];
+    const gate = withContext((problem) => ({
+      budget: Object.assign(Object.create(problem.budget) as ProblemContext["budget"], {
+        ask: async (request: { site: string; estimateUsd: number }) => {
+          asked.push(request);
+          return { action: "skip" as const, by: "rule", reason: "no room for it", exploration: false };
+        },
+      }),
+    }));
+    const { events, faux } = await hard([say("I cannot do this.")], {}, {}, gate);
+    assert.equal(faux.getPendingResponseCount(), 0);
+    assert.deepEqual(asked.map((a) => a.site), ["task"], "asked once, as a task of one call");
+    assert.equal(planned(events).length, 0);
+    assert.equal(nodes(events, "m12_sketch").length, 1, "no redraft");
   });
 });

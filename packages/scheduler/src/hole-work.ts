@@ -1,4 +1,4 @@
-import { STANDARD_AXIOMS, collapseWhitespace, maskCommentsAndStrings, prepareSketch, readDeclarationHead, splitCommands, type Submission, type ValidationReport } from "@seshat/core";
+import { STANDARD_AXIOMS, collapseWhitespace, hasScratch, maskCommentsAndStrings, SCRATCH_REASON, prepareSketch, readDeclarationHead, splitCommands, type Submission, type ValidationReport } from "@seshat/core";
 
 /** A hole's declared dependency as its session sees it: the name and the statement, to be a stub. */
 export interface Dependency {
@@ -67,6 +67,7 @@ export function readWork(submission: Submission, report: ValidationReport, deps:
   if (report.leanStatus === undefined || report.leanStatus === "server_error" || report.leanStatus === "timeout") return refuse("Lean did not check the file");
   if (report.editsOutsideRegions) return refuse("the file was changed outside the regions");
   if (report.messages.some((m) => m.severity === "error")) return refuse("Lean reports an error");
+  if (hasScratch(submission)) return refuse(SCRATCH_REASON);
   // Lean's own report, besides the text scan below: every sorry it reports lies in a dependency stub, and no axiom beyond the allowed ones.
   const stray = report.axioms.filter((a) => !WORK_AXIOMS.includes(a));
   if (stray.length > 0) return refuse(`the file depends on ${stray.join(", ")}: no axiom is allowed beyond the standard ones`);

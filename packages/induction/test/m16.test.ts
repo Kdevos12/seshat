@@ -20,7 +20,11 @@ import {
   readM16Options,
   SEARCH_PROGRAM_KIND,
   SEARCH_RESULT_KIND,
+  SEARCH_LOCAL_KIND,
   type SearchSpec,
+  runLocalSearch,
+  neighborhoodMoves,
+  makeLocalPhase,
 } from "../src/index.ts";
 import { openMemory, scriptedLlm } from "./helpers.ts";
 
@@ -361,5 +365,227 @@ describe("novelty and balanced parents (plan change LH5)", () => {
     const greedy = new ProgramDatabase(1, { temperature: 0.01, lengthBias: 0, clusterSize: 2 });
     for (const [score, code] of [[9, "best"], [1, "low"]] as const) greedy.add({ code, signature: [score], score, round: 0, island: 0 });
     assert.ok(greedy.sample(1, seeded(1))?.programs[0]?.code === "best", "without the option the draw is the softmax");
+  });
+});
+
+describe("the iid baseline (plan change CX2)", () => {
+  const seed = "(n) => [0]";
+  const candidates = ["(n) => [0, 1]", "(n) => [0, 1, 2]", "(n) => [0, 1, 2, 3]", "(n) => [0, 1, 2, 3, 4]", "(n) => [0, 1, 2, 3, 4, 5]", "(n) => [0, 1, 2, 3, 4, 5, 6]", "(n) => [0, 1, 2, 3, 4, 5, 6, 7]", "(n) => [0, 1, 2, 3, 4, 5, 6, 7, 8]"];
+  const scorer = async (code: string) => ({ ok: true as const, signature: [code.length], score: code.length });
+  const noTarget: SearchSpec = { ...(({ target: _t, ...rest }) => rest)(spec), seeds: [seed] };
+  const run = async (strategy: "islands" | "iid" | undefined) => {
+    const llm = scriptedLlm(candidates.map((program) => ({ program })));
+    const resets: number[][] = [];
+    const islands = new Set<number>();
+    const options = { ...SEARCH_DEFAULTS, rounds: 4, samples: 2, resetEvery: 2, ...(strategy !== undefined ? { strategy } : {}) };
+    const result = await runSearch(llm, noTarget, options, scorer, seeded(4), { events: { reset: (e) => resets.push(e.islands), program: (e) => islands.add(e.island) } });
+    return { result, prompts: llm.requests.map((r) => r.prompt), resets, islands };
+  };
+
+  it("asks the same prompt every time, with one island and no resets, for the same number of calls", async () => {
+    const iid = await run("iid");
+    const islands = await run(undefined);
+    assert.equal(iid.prompts.length, 8, "rounds x samples");
+    assert.equal(islands.prompts.length, 8, "the same spend as the islands");
+    const body = (p: string) => p.replace(/ \(round \d+\)/g, "").replace(/ \(draft \d+ of \d+\)/g, "");
+    assert.equal(new Set(iid.prompts.map(body)).size, 1, "one prompt");
+    assert.equal(new Set(iid.prompts).size, 8, "each call is its own for reuse");
+    assert.ok(iid.prompts.every((p) => p.includes(seed) && !candidates.some((c) => p.includes(c))), "only the seed is shown");
+    assert.deepEqual([iid.resets, [...iid.islands]], [[], [0]]);
+    assert.equal(iid.result.best?.code, candidates[7], "the best program found is kept");
+    assert.ok(islands.resets.length > 0 && islands.islands.size === 3, "the islands reset and use three islands");
+    assert.ok(islands.prompts.some((p) => candidates.some((c) => p.includes(c))), "the islands feed found programs back");
+  });
+
+  it("is the islands when absent, and reads the option", async () => {
+    const absent = await run(undefined);
+    const named = await run("islands");
+    assert.deepEqual([named.prompts, named.result, named.resets], [absent.prompts, absent.result, absent.resets]);
+    assert.equal(M16_OPTIONS.strategy, "islands");
+    assert.equal("strategy" in readM16Options(M16_OPTIONS), false, "the default leaves the search options as they were");
+    assert.equal(readM16Options({ ...M16_OPTIONS, strategy: "iid" }).strategy, "iid");
+    const { strategy: _s, ...older } = M16_OPTIONS;
+    assert.equal(readM16Options(older).strategy, undefined, "options written before CX2 are the islands");
+    assert.throws(() => readM16Options({ ...M16_OPTIONS, strategy: "beam" }), /option M16\.strategy/);
+  });
+
+  it("runs the line with M16.strategy=iid and submits the witness it finds", async () => {
+    const memory = openMemory("orchestrator-test");
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n = n", header: "import Mathlib", origin: "bench:t" });
+    declareSearch(memory, claimId, spec);
+    const llm = scriptedLlm([{ program: "(n) => [1, 1, 1, 1]" }, { program: "(n) => Array.from({length: n}, (_, i) => 9 - i)" }]);
+    const requests: ValidateRequest[] = [];
+    const tasks: TaskInfo[] = [];
+    const problem = {
+      line: "M16", runId: "r", problemId: "p", claimId, memory, llm, log: () => {}, signal: new AbortController().signal,
+      budget: { exhausted: false, usd: 0, limitUsd: undefined },
+      tasks: {
+        list: (q: { kinds?: string[]; claimId?: string } = {}) => tasks.filter((t) => (q.kinds === undefined || q.kinds.includes(t.kind)) && (q.claimId === undefined || t.claimId === q.claimId)),
+        propose: (p: { kind: string; claimId?: string }) => (tasks.push({ taskId: "t1", kind: p.kind, status: "ready", claimId: p.claimId, dependsOn: [], proposedBy: "line:M16" } as unknown as TaskInfo), { accepted: true, taskId: "t1" }),
+      },
+      validate: async (request: ValidateRequest): Promise<ValidateResult> => (requests.push(request), { verdict: "valid", status: "computed", reasons: [] }),
+      options: { ...M16_OPTIONS, samples: 1, rounds: 8, callMs: 150, totalMs: 4000, strategy: "iid" },
+    } as unknown as ProblemContext;
+    const line = createM16();
+    await line.hooks.beforeProvers?.(problem);
+    const end = await line.hooks.runTask?.(problem, tasks[0] as TaskInfo, "p1");
+    assert.match(end?.reason ?? "", /best score 30, target reached; Lean: valid/);
+    assert.equal(requests.length, 1);
+    assert.equal(llm.requests.length, 2, "stopped at the target");
+    assert.ok(llm.requests.every((r) => r.prompt.includes("Array.from({length: n}, (_, i) => i)") && !r.prompt.includes("[1, 1, 1, 1]")), "the seed's prompt each time");
+  });
+});
+
+describe("local search between model rounds (plan change CX5)", () => {
+  const ones = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const settings = { method: "anneal" as const, steps: 200, neighbors: 4, plateau: 30, restarts: 1, temperature: 0, cooling: 1, tabuTenure: 8 };
+
+  it("climbs with annealing at temperature 0, takes worse moves under tabu, and draws the same for the same seed", async () => {
+    const problem = (score: (x: number[]) => number) => ({
+      start: () => Array(10).fill(0) as number[],
+      moves: (x: number[], count: number) => Array.from({ length: count }, () => x),
+      score: async (xs: number[][]) => xs.map(score),
+    });
+    const flips = (seed: number) => {
+      const random = seeded(seed);
+      const bits = neighborhoodMoves("bits", Array(10).fill(0), random, {});
+      assert.ok("moves" in bits);
+      return { random, moves: bits.moves as unknown as (x: number[], count: number) => Promise<number[][]> };
+    };
+    const run = async (method: "anneal" | "tabu", seed: number) => {
+      const { random, moves } = flips(seed);
+      return runLocalSearch({ ...problem(ones), moves, isHit: (_x, s) => s >= 10 }, { ...settings, method }, random);
+    };
+    const climb = await run("anneal", 3);
+    assert.deepEqual(climb.hit?.object, Array(10).fill(1));
+    assert.deepEqual(await run("anneal", 3), climb, "the same seed, the same search");
+    // A score that punishes every move: the climb never moves and ends on its plateau; tabu moves all the same.
+    const { random, moves } = flips(5);
+    const flat = await runLocalSearch({ ...problem((x) => 0 - ones(x)), moves }, { ...settings, plateau: 5 }, random);
+    assert.deepEqual([flat.steps, flat.best?.score], [5, 0]);
+    const t = flips(5);
+    let visited = 0;
+    const tabu = await runLocalSearch({ ...problem((x) => 0 - ones(x)), moves: async (x, c) => (visited++, t.moves(x, c)) }, { ...settings, method: "tabu", plateau: 5 }, t.random);
+    assert.equal(tabu.steps, 5);
+    assert.equal(tabu.best?.score, 0, "the best stays the start");
+  });
+
+  it("moves each neighborhood within its kind, and says why a witness is not one it moves", async () => {
+    const r = seeded(9);
+    const check = async (spec: Parameters<typeof neighborhoodMoves>[0], start: unknown, ok: (x: unknown) => boolean) => {
+      const n = neighborhoodMoves(spec, start as never, r, { callMs: 150, totalMs: 4000 });
+      assert.ok("moves" in n, JSON.stringify(n));
+      for (const x of await n.moves(start as never, 20)) assert.ok(ok(x), JSON.stringify(x));
+    };
+    await check("bits", [0, 1, true], (x) => Array.isArray(x) && x.length === 3);
+    await check({ kind: "intList", min: 0, max: 5 }, [0, 5, 3], (x) => Array.isArray(x) && x.every((v) => Number.isInteger(v) && v >= 0 && v <= 5));
+    await check("permutation", [0, 1, 2, 3], (x) => Array.isArray(x) && [...x].sort().join() === "0,1,2,3");
+    await check({ kind: "graph", min: 3, max: 5 }, { n: 4, edges: [[0, 1]] }, (x) => {
+      const g = x as { n: number; edges: number[][] };
+      return g.n >= 3 && g.n <= 5 && g.edges.every(([u, v]) => (u as number) < (v as number) && (v as number) < g.n);
+    });
+    await check({ move: "(x) => x.map((v) => v + (Math.random() < 0.5 ? 1 : 0))" }, [1, 2], (x) => Array.isArray(x) && x.length === 2);
+    assert.match(String((neighborhoodMoves("bits", [2], r, {}) as { problem: string }).problem), /0\/1/);
+    assert.ok("problem" in neighborhoodMoves({ kind: "graph" }, [1], r, {}));
+    assert.ok("problem" in neighborhoodMoves("cube" as never, [1], r, {}));
+  });
+
+  const bitsSpec: SearchSpec = {
+    description: "twelve bits with as many ones as possible",
+    signature: "(n) => an array of n bits",
+    inputs: [12],
+    score: "({input, output}) => Array.isArray(output) && output.length === input && output.every((b) => b === 0 || b === 1) ? output.reduce((a, b) => a + b, 0) : null",
+    target: 12,
+    seeds: ["(n) => Array(n).fill(0)"],
+    statement: "(w : List ℕ) (h : w = {witness}) : w.sum = 12",
+    proof: "subst h; decide",
+  };
+  // The faux model improves by two ones a round: six rounds to the target.
+  const slowScript = [2, 4, 6, 8, 10, 12].map((k) => ({ program: `(n) => Array.from({length: n}, (_, i) => (i < ${k} ? 1 : 0))` }));
+
+  async function runLine(spec: SearchSpec, options: Record<string, unknown> = {}, memory = openMemory("orchestrator-test")) {
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n = n", header: "import Mathlib", origin: "bench:t" });
+    declareSearch(memory, claimId, spec);
+    const llm = scriptedLlm(slowScript);
+    const requests: ValidateRequest[] = [];
+    const tasks: TaskInfo[] = [];
+    const problem = {
+      line: "M16", runId: "r", problemId: "p", claimId, memory, llm, log: () => {}, signal: new AbortController().signal, seed: 11,
+      budget: { exhausted: false, usd: 0, limitUsd: undefined },
+      tasks: {
+        list: (q: { kinds?: string[]; claimId?: string } = {}) => tasks.filter((t) => (q.kinds === undefined || q.kinds.includes(t.kind)) && (q.claimId === undefined || t.claimId === q.claimId)),
+        propose: (p: { kind: string; claimId?: string }) => (tasks.push({ taskId: "t1", kind: p.kind, status: "ready", claimId: p.claimId, dependsOn: [], proposedBy: "line:M16" } as unknown as TaskInfo), { accepted: true, taskId: "t1" }),
+      },
+      validate: async (request: ValidateRequest): Promise<ValidateResult> => (requests.push(request), { verdict: "valid", status: "computed", reasons: [] }),
+      options: { ...M16_OPTIONS, samples: 1, rounds: 8, callMs: 300, totalMs: 6000, ...options },
+    } as unknown as ProblemContext;
+    const line = createM16();
+    await line.hooks.beforeProvers?.(problem);
+    const end = await line.hooks.runTask?.(problem, tasks[0] as TaskInfo, "p1");
+    const local = memory.nodes(SEARCH_LOCAL_KIND, { claimId }).map((n) => (n.data as unknown as { record: { phase: number; seed: number; steps: number; bestScore: number | null; improved: boolean } }).record);
+    const done = (memory.nodes(SEARCH_RESULT_KIND, { claimId })[0]?.data as unknown as { done: { claimId: string; witness: unknown; local?: { score: number } } }).done;
+    return { end, llm, requests, local, done, memory, claimId };
+  }
+
+  it("reaches the target of a toy score in fewer model rounds than without it, and submits the improved witness to Lean", async () => {
+    const without = await runLine(bitsSpec);
+    const withLocal = await runLine({ ...bitsSpec, neighborhood: "bits" });
+    assert.equal(without.llm.requests.length, 6, "six model rounds without the local search");
+    assert.ok(withLocal.llm.requests.length < without.llm.requests.length, `${withLocal.llm.requests.length} model rounds with it`);
+    assert.match(withLocal.end?.reason ?? "", /best score 12, target reached; Lean: valid/);
+    assert.deepEqual(withLocal.done.witness, Array(12).fill(1));
+    assert.equal(withLocal.requests[0]?.proof, "subst h; decide");
+    assert.equal(withLocal.requests.length, 1, "Lean, not the score, settles the witness");
+    assert.ok(withLocal.local.length >= 1 && withLocal.local.some((r) => r.improved), "each phase is journaled with its seed");
+    assert.equal(without.local.length, 0);
+  });
+
+  it("does not submit a local witness that Lean already refuted for the claim: the counterexample set screens it too", async () => {
+    const memory = openMemory("orchestrator-test");
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n = n", header: "import Mathlib", origin: "bench:t" });
+    admitCounterexample(memory, claimId, { object: Array(12).fill(1), id: "twelve ones", source: "lean_decide", refutes: "an earlier witness" });
+    const run = await runLine({ ...bitsSpec, neighborhood: "bits" }, {}, memory);
+    assert.notDeepEqual(run.done.witness, Array(12).fill(1));
+    assert.equal(run.done.local, undefined, "the refuted object is not the search's witness");
+    assert.equal(run.requests.length, 0, "nothing reached the target, so nothing went to Lean");
+    assert.ok(cegisCounter(memory, claimId).dropped >= 1);
+  });
+
+  it("is the search it was without a neighborhood, whatever the local options say", async () => {
+    const a = await runLine(bitsSpec);
+    const b = await runLine(bitsSpec, { localMethod: "tabu", localSteps: 3, plateauSteps: 1, localNeighbors: 2, localMs: 100 });
+    assert.deepEqual(b.llm.requests.map((r) => r.prompt), a.llm.requests.map((r) => r.prompt));
+    const bare = (d: { claimId?: string }) => ({ ...d, claimId: "" });
+    assert.deepEqual([bare(b.done), b.end], [bare(a.done), a.end]);
+    const { localMethod: _m, localSteps: _s, plateauSteps: _p, localNeighbors: _n, localTemperature: _t, tabuTenure: _u, localMs: _ms, ...older } = M16_OPTIONS;
+    assert.deepEqual(readM16Options(older).local, readM16Options(M16_OPTIONS).local, "options written before CX5 take the defaults");
+    assert.throws(() => readM16Options({ ...M16_OPTIONS, localMethod: "beam" }), /option M16\.localMethod/);
+  });
+
+  it("replays a journaled phase with its seed and step count, not the wall time", async () => {
+    // A move program that never improves: every phase ends on its plateau.
+    const spec: SearchSpec = { ...bitsSpec, target: 13, neighborhood: { move: "(x) => x.map((b) => (Math.random() < 0.3 ? 0 : b))" } };
+    const first = await runLine(spec, { plateauSteps: 3, rounds: 2 });
+    assert.ok(first.local.length >= 2 && first.local.every((r) => r.steps === 3 && r.improved === false));
+    // A process that resumes finds the phases' nodes: each phase runs the steps on record, though its time is now too short for one.
+    const memory = openMemory("orchestrator-test");
+    const { claimId } = await memory.ensureClaim({ statement: "(n : ℕ) : n = n", header: "import Mathlib", origin: "bench:t" });
+    const key = (first.memory.nodes(SEARCH_LOCAL_KIND, { claimId: first.claimId })[0]?.data as { key: string }).key;
+    for (const record of first.local) memory.recordNode({ kind: SEARCH_LOCAL_KIND, claimId, data: { key, record } as never });
+    const again = await runLine(spec, { plateauSteps: 3, rounds: 2, localMs: 100 }, memory);
+    assert.deepEqual(again.local, first.local);
+    assert.deepEqual({ ...again.done, claimId: "" }, { ...first.done, claimId: "" });
+  });
+
+  it("says why a phase does nothing: a Sage score, a witness its neighborhood does not move", async () => {
+    const records: unknown[] = [];
+    const best = { code: "(n) => 7", signature: [0], score: 0, round: 0, island: 0 };
+    const phase = makeLocalPhase({ ...bitsSpec, neighborhood: "bits" }, { method: "anneal", steps: 5, neighbors: 2, plateauSteps: 2, temperature: 0, tabuTenure: 0, ms: 2000 }, { callMs: 150, totalMs: 4000 }, 1, { record: (r) => records.push(r) });
+    assert.equal(await phase(best, undefined, 1), undefined);
+    assert.match(JSON.stringify(records[0]), /not a non-empty list of 0\/1/);
+    const { score: _s, ...sage } = bitsSpec;
+    const none = makeLocalPhase({ ...sage, scoreSage: "1", neighborhood: "bits" }, { method: "anneal", steps: 5, neighbors: 2, plateauSteps: 2, temperature: 0, tabuTenure: 0, ms: 2000 }, {}, 1, { record: (r) => records.push(r) });
+    assert.equal(await none(best, undefined, 1), undefined);
+    assert.match(JSON.stringify(records[1]), /JavaScript scoring program/);
   });
 });

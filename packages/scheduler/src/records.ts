@@ -42,6 +42,11 @@ export interface SketchRecord {
    */
   fromInformal?: boolean;
   lifted?: boolean;
+  /**
+   * A hole's local redraft (DP7, M12's `redraftDepth`): the claim of the hole whose draft this is, the hole as its target. Its holes are claims under that hole, the
+   * `decomposes_into` edge (`edgeId`) is from it, and its link lemma is the hole's; a record without it decomposes the problem's own claim.
+   */
+  redraftOf?: string;
   /** A draft that was not kept (DP3, `longProof.drafts`): recorded as Lean said, never registered, and read by no consumer of the sketches but the audit. */
   discarded?: boolean;
   refinedFrom?: string;
@@ -57,7 +62,7 @@ export interface SketchRecord {
   registered: boolean;
   /** The claims made of the holes' statements, parallel to `names`, once registered. */
   holes: string[];
-  /** The `decomposes_into` edge from the problem's claim to the holes, once made. */
+  /** The `decomposes_into` edge from the problem's claim (or the `redraftOf` hole's) to the holes, once made. */
   edgeId?: string;
 }
 
@@ -106,6 +111,8 @@ export interface SessionRecord {
   /** `statement_wrong`: Lean accepted the proof of the negation through `validate`; and the prover's argument. The `hole_verdict` node is made again from these if a cut lost it. */
   negationValidated?: boolean;
   argument?: string;
+  /** A hole session: Lean's errors plus `sorry` at its first and last check that Lean ran (`HoleSessionResult.progress`). */
+  progress?: { first: number; last: number };
 }
 
 /** The pre-flight of a hole, before any paid session (CA11): what the battery, `plausible` and the battery on the negation found. An evidence node. */

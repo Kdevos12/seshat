@@ -15,6 +15,7 @@ import {
   orderByPosterior,
   Posteriors,
   probeHost,
+  routeStatement,
   runBattery,
   type SolveContext,
   type SolveSettings,
@@ -193,6 +194,12 @@ describe("the host probe", () => {
     assert.equal(probe.unreachable, undefined);
   });
 
+  it("counts a tactic that parses but says it is no longer available as missing (polyrith on Lean 4.27.0)", async () => {
+    const probe = await probeHost(new ScriptedLean({ hammer: { ok: true }, canonical: { ok: true }, polyrith: { retired: true }, bv_decide: { ok: true } }), {});
+    assert.deepEqual(probe.missing, ["polyrith"]);
+    assert.equal(probe.have.has("polyrith"), false);
+  });
+
   it("learns nothing from a probe that timed out or whose import failed (review M3)", async () => {
     const timedOut = await probeHost(new ScriptedLean({ hammer: { timeout: true }, canonical: { timeout: true }, polyrith: { timeout: true }, bv_decide: { timeout: true } }), {});
     assert.ok(timedOut.unreachable !== undefined);
@@ -265,10 +272,13 @@ describe("solving a claim", () => {
     assert.deepEqual(ctx.requests, [{ claimId: ctx.claimId, proof: "omega" }]);
     const node = ctx.memory.nodes(BATTERY_RUN, { claimId: ctx.claimId })[0];
     assert.ok(node);
-    const data = node.data as { solved?: { tactic: string }; submission?: { validationId?: string }; domains: string[] };
+    const data = node.data as { solved?: { tactic: string }; submission?: { validationId?: string }; domains: string[]; moves?: string[] };
     assert.equal(data.solved?.tactic, "omega");
     assert.equal(data.submission?.validationId, "val_1");
     assert.equal(data.domains[0], "presburger");
+    // The router's moves (plan change CX1) are journaled with its domains.
+    assert.deepEqual(data.moves, routeStatement(GOAL.statement).moves);
+    assert.ok(data.moves?.includes("E3"), "a ∀ over ℕ with small instances");
   });
 
   it("goes on with another tactic when validate refuses a proof", async () => {

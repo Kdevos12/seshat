@@ -23,7 +23,7 @@ interface LibraryBuilder {
 | Builder | Does |
 |---|---|
 | `none` (default) | Builds nothing. The result is `skipped`, and the gap is only recorded. |
-| `coding-agent` | Runs an external CLI agent in a clone of the environment's project, then applies the gate below. |
+| `coding-agent` | Runs an external agent (its command line, or an ACP session: [Transports](#transports)) in a clone of the environment's project, then applies the gate below. |
 
 A **spec** (`LibrarySpec`, written by a person or by a later spec writer, never by the agent) has a job, a domain, a reason,
 the imports the new files may use, the items to formalize (an informal statement, the expected name and `def` or `theorem`),
@@ -47,17 +47,18 @@ is invalid, and the agent is not started.
 2. The agent runs non-interactively with the prompt on standard input, in a process group that is killed at the time limit or
    on abort. Its command is the settings' `command` (an argv, or a string split on whitespace) or the default for its name:
 
-   | `agent` | Default command | Note |
+   | `agent` | Default command | Checked |
    |---|---|---|
-   | `claude-code` | `claude -p --output-format stream-json --verbose [--model M] [--max-budget-usd N]` | |
-   | `codex` | `codex exec [--model M]` | |
-   | `opencode` | `opencode run [--model M]` | |
-   | `agy` | `agy --output-format stream-json [--model M]` | |
-   | `pi` | `pi -p [--model M]` | |
+   | `claude-code` | `claude -p --output-format stream-json --verbose --permission-mode acceptEdits [--model M] [--max-budget-usd N]` | Against the published CLI reference, 2026-11-25: every flag exists (`--max-budget-usd` is print mode only). Print mode denies a permission prompt that no one answers, so without `--permission-mode acceptEdits` the agent could not write its files; that flag was added. Bash commands (`lake build`) still ask and are denied: set `command` with `--permission-mode bypassPermissions` behind a sandbox for an agent that builds its own work. That a prompt on standard input alone, with no query argument, is read is not stated there. |
+   | `codex` | `codex exec --sandbox workspace-write [--model M]` | Against the published non-interactive guide, 2026-11-25: with no prompt argument `codex exec` reads the prompt from standard input; it runs in a read-only sandbox by default, so `--sandbox workspace-write` was added. `--model` is not named on that page. |
+   | `opencode` | `opencode run [--model M]` | Not checked: the published CLI page shows `opencode run "message"` and names neither `--model` nor standard input. |
+   | `agy` | `agy --output-format stream-json [--model M]` | Not checked. |
+   | `pi` | `pi -p [--model M]` | Not checked. |
 
-   A flag whose value is not set (`{model}`, `{budget_usd}`) is left out with its value. The defaults are the plan's names and the
-   flags that those programs documented when this was written: **check each against the installed release** before the first
-   real build. `sandbox` is a command put in front of the agent (`bwrap ...`); without one the builder is not made unless
+   A flag whose value is not set (`{model}`, `{budget_usd}`) is left out with its value. No row was checked against an installed
+   release, only against published documentation where the column says so: **check each against the installed release** before
+   the first real build (`harness doctor --agents` does it, [Checking the agents](#checking-the-agents)).
+   `sandbox` is a command put in front of the agent (`bwrap ...`); without one the builder is not made unless
    the settings say `unsandboxed: true`, the rule of the certifier ([certifier.md](certifier.md#where-untrusted-code-runs)).
 3. **The environment of the agent is `PATH`, a `HOME` and `TMPDIR` of its own, and the variables the settings' `env` names, and nothing
    else.** The harness's own keys (the model providers', `JEV_API_KEY`, `LEAN_SERVER_API_KEY`) never reach it unless a person copies one
@@ -71,6 +72,88 @@ is invalid, and the agent is not started.
    same `sandbox` command as the agent, or, with `unsandboxed: true`, without one; with neither, the build does not start. Every command runs in a process group that
    is killed at its time limit or on abort. **Seshat cuts no network itself**: that no code reaches the network while the build runs is the sandbox's job (`bwrap --unshare-net`,
    say), and `lake exe cache get` needs a network of its own, so a sandbox for the build step has to allow it or the cache has to be filled before.
+
+## Transports
+
+How Seshat talks to the agent is `agent.transport` (plan change EA2): `cli` (the default, as above) or `acp`. Both are one builder:
+the clone, the agent's environment (`PATH`, its own `HOME` and `TMPDIR`, the variables of `env` and nothing else), the `sandbox`
+command in front, the time limit, the gate and the record are the same, and the gate decides what is kept whatever the transport.
+**Seshat decides, never the agent**: neither an exit code nor a stop reason is a verdict.
+
+With `acp`, Seshat is a client of the **Agent Client Protocol** (JSON-RPC 2.0, one message per line on the agent's standard input and
+output). It starts the agent's ACP command, then:
+
+1. `initialize` with protocol version 1 and **no `fs` and no `terminal` capability**: the agent reads and writes with its own tools,
+   inside the sandbox, and the gate reads what it left. An agent that answers another protocol version is refused.
+2. `session/new` with the clone as `cwd` and the MCP servers of `acp.mcpServers` (stdio; `{clone}` in a value is the clone's
+   directory). Absent, `harness library build` gives the `lean-lsp-mcp` command that `lean.lsp` wraps (`uvx` with the pinned
+   release, `LEAN_PROJECT_PATH` the clone); `[]` gives none.
+3. `session/prompt` with the spec's prompt (the same text as on standard input over the CLI). The agent's `agent_message_chunk`
+   text is kept as its output; `usage_update` is recorded (tokens used, context size, cumulative cost).
+4. **Permission requests** (`session/request_permission`) are answered by the settings: a tool kind listed in `acp.deny` (default
+   `["fetch"]`: the network is the sandbox's to give, and the CLI transport's print mode denies a fetch too) is refused; a request
+   that names a path outside the clone is refused whatever its kind; anything else is allowed, once (`allow_once`
+   rather than `allow_always`, so that every request is asked; a request that offers no `allow_once` is answered `cancelled`). Every answer is journaled with its reason. A path is placed by
+   resolving each component physically, as the kernel would: a link is followed where it stands and `..` goes to the parent of
+   what came before it, so `clone/d/link/../passwd` with `link` to `/etc` is `/passwd`. A path that starts with `~`, is a URI
+   (`file://...`), holds a NUL byte, has a `..` after a part that does not exist, or cannot be resolved (a name too long) is
+   refused. **The answer is advisory, and racy**: the agent's tool acts after it, on a path that may have changed in between (a link
+   made after the check), and an agent may not ask at all. Only the sandbox confines the agent.
+5. **Every other request of the agent** (`fs/read_text_file`, `fs/write_text_file`, `terminal/*`, anything else) is answered
+   "method not found" and recorded. A line that is not a JSON-RPC message is counted and ignored; a line longer than 4 MiB ends the run.
+   A request whose handling fails in Seshat is answered with an internal error (-32603) and the run goes on; if the harness itself
+   exits during a build (an uncaught error, `process.exit`), the agent's process group is killed first, on either transport.
+6. At the time limit or on abort, Seshat sends `session/cancel`, waits `acp.cancelGraceSec` (default 5, from 0 to 300 seconds; another value is refused with the settings) for the turn to end, then kills
+   the process group as the CLI transport does: the build is `failed`. When the reported cost reaches the dollar budget (`budget.usd`,
+   in USD), Seshat cancels the turn, waits `acp.cancelGraceSec` in the same way and kills the process group if the turn has not
+   ended, and the gate judges what was written. The cost is recorded, not charged anywhere: `harness library
+   build` has no ledger, and the job's caller (plan change EA3) charges it. **An agent that reports no cost** (no `usage_update`
+   with a cost in USD) **has no dollar budget over ACP**: no default ACP command passes a budget flag, and only the time limit
+   stops it.
+
+When the turn ends, the process group is killed and the files are judged. A protocol that never reaches the prompt (the agent exits,
+speaks something else, refuses `initialize` or `session/new`) is a build that `failed`: the agent did not start. A prompt answered
+with an error, or an agent that exits during its turn, is judged by its files, like a CLI agent's non-zero exit code.
+
+| `agent` | Default ACP command |
+|---|---|
+| `claude-code` | `claude-agent-acp` (adapter) |
+| `codex` | `codex-acp` (adapter) |
+| `opencode` | `opencode acp` |
+| `pi` | `pi-acp` (adapter) |
+| `gemini` | `gemini --experimental-acp` |
+| `hermes` | `hermes acp` |
+| `goose` | `goose acp` |
+
+`agy` has no default ACP command; `gemini`, `hermes` and `goose` have no default CLI command: with those, `command` is required. The
+ACP defaults are the plan's names; none has been run (`harness doctor --agents` sends each installed one `initialize`). `model`
+reaches an ACP agent only through a `{model}` placeholder in a `command` of the person's: the defaults pass none. The protocol's method and field names are in one module,
+`packages/library-builder/src/acp-protocol.ts`, written against the specification's version 1 as published on 2026-11-25. Seshat
+implements the messages itself, without the protocol's TypeScript SDK that the plan named: no new dependency, and the few messages a
+client needs fit in one module.
+
+## Checking the agents
+
+`harness doctor` has a section "Coding agents" when `config/library-builder.json` selects `coding-agent`, or with `--agents`
+(plan change EA1). It costs nothing: no prompt is sent, no session is opened, no model is called. For the configured agent (and with
+`--agents`, for every agent of the two default tables that is installed; the others are listed in one line) it says:
+
+- whether the agent's program is installed (on `PATH`, or the path the command names), and what `--version` prints (the program for a
+  default command; the tokens before the first flag for a command of the person's). A command of the person's whose program is not
+  one of the default commands' (`claude`, `codex`, `claude-agent-acp`, ...) is asked neither `--version` nor `--help`, since its
+  tokens may be an interpreter and a script that would run: the section says "not probed";
+- for the CLI transport, whether the help of the non-interactive mode (`claude --help`, `codex exec --help`, the tokens before the first
+  flag and `--help`) names every flag the command passes, placeholders given a value; a flag it does not name is a warning, since a
+  release may have renamed it (some programs do not list every flag in their help);
+- for ACP, whether the agent answers `initialize` within 10 seconds, and with what: the protocol version, `loadSession`, its MCP
+  capabilities (`http`, `sse`), its name and version. Nothing is sent after `initialize`, and the process group is killed.
+
+The checks run as a build would run the agent: behind its `sandbox` (with `--agents`, the other agents behind the configured agent's
+`sandbox`, or none when the config names none), with its environment only (`PATH`, a `HOME` and `TMPDIR` of their
+own, the variables of `agent.env`), in an empty directory. No value of the config is printed: every value a `${env:NAME}` of the
+agent's section expanded to, wherever it stands (`command`, `sandbox`, `env`), and every value of `agent.env` is shown as `[hidden]`,
+in the commands the section prints as in the agent's own output, which is cut to a line. A `${env:NAME}` that is not set is named (never guessed) and the checks run without
+it. Everything the section finds is a warning at worst: a run does not need a coding agent, so `doctor`'s exit code does not change.
 
 ## The gate
 
@@ -97,8 +180,11 @@ exist only there. In `harness library build` that is a `LakeCertifier` with the 
 ## What is journaled
 
 `recordBuild` writes one `library_build` node ([memory.md](memory.md#nodes)) with: the agent, the model, the budget and time limit, the argv, the
-keys of the agent's environment, the base commit, the prompt and the diff (as blobs, by hash), the end of the agent's output, the spec, every
-gate check with its detail, the files with their hashes, the theorems, the definitions and the verdict. An accepted build also records each
+keys of the agent's environment (never a value: in the argv and the agent's output, every value of `agent.env` and every value a
+`${env:NAME}` of the config expanded to is `[hidden]`), the base commit, the prompt and the diff (as blobs, by hash), the end of the agent's output, the spec, every
+gate check with its detail, the files with their hashes, the theorems, the definitions and the verdict. Over ACP it also holds `transport: "acp"`
+and `acp`: what `initialize` answered, the session id, the stop reason, the MCP servers' names, every permission answer with its reason, the
+requests refused, the usage reported and why the turn was cancelled. A build over the CLI has neither field. An accepted build also records each
 new definition as a `lean_definition` node, `unreviewed` ([below](#review-status-of-definitions)). Gaps are `library_gap` nodes. A build
 never creates a claim and never changes a claim's status: the only things that change a status are `validate` and the certifier
 ([trust.md](trust.md)). `harness library build` writes the record to a journal directory of its own (`--out`, default `runs/library-ID`). That journal has no run in it, so it is
@@ -152,8 +238,8 @@ definition nobody checked ([memory.md](memory.md#definitions-and-their-review-st
 
 ## Config
 
-`config/library-builder.json` selects the builder (`none` as shipped). For `coding-agent` it holds `agent` (`agent`, `command`, `model`, `env`,
-`sandbox`, `unsandboxed`), `repo`, `build` (`cwd`, `libRoot`, `prepare`, `timeoutSec`, `env`), `certifier` (the `LakeCertifier` settings except `projectDir`),
+`config/library-builder.json` selects the builder (`none` as shipped). For `coding-agent` it holds `agent` (`agent`, `transport`, `command`, `model`, `env`,
+`sandbox`, `unsandboxed`, and for `acp` the optional `acp`: `mcpServers`, `deny`, `cancelGraceSec`), `repo`, `build` (`cwd`, `libRoot`, `prepare`, `timeoutSec`, `env`), `certifier` (the `LakeCertifier` settings except `projectDir`),
 `budget` and `timeoutSec`. Only the selected section is read and its `${env:NAME}` variables expanded. The model is the config's string, never
 chosen by the harness.
 
@@ -167,7 +253,13 @@ Whole-domain libraries are out of budget; targeted fills and ports are not.
 
 ## Not run
 
-- No real coding agent: the five default commands are not checked against the installed programs, and the stream-json output is not read at all (only the files count).
+- No real coding agent: the default commands are not checked against installed programs (two were checked against published documentation on 2026-11-25, and corrected), and the stream-json output is not read at all (only the files count).
+- No real ACP agent or adapter: the transport ran against a fake agent script only (`test/fixtures/fake-acp-agent.mjs`). The message and field
+  names of `acp-protocol.ts` follow the published specification and must be checked against a real agent; so must the default ACP commands,
+  whether an agent asks permission before its edits at all, and whether the default MCP server starts behind the person's sandbox (`uvx`
+  fetches the pinned release unless it is cached, and a sandbox without network refuses that).
+- `harness doctor`'s coding agents' section ran against a fake ACP agent and simulated programs only: no installed agent's `--version`,
+  help or `initialize` has been seen, so whether `--version` and `--help` behave as assumed (an adapter may take neither) is not known.
 - No real `lake`, Lean or certifier: the gate's `build` is a fake `lake`, and the fake certifier compares statements by text where the real one compares terms.
   The real gate needs the project to be a git repository with a lakefile that requires the environment's packages and the library at `lean/SeshatLib`: that
   project is not made by `lean-env` yet (the environment's directory is generated and ignored by git), and `lean/SeshatLib` is not yet a package of any environment file.

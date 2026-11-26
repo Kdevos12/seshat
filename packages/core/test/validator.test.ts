@@ -11,7 +11,9 @@ import {
   ProofValidator,
   prepareSketch,
   renderSketch,
+  hasScratch,
   scanRegion,
+  SCRATCH_POLICY,
   SKETCH_POLICY,
   structuralCheck,
 } from "../src/index.ts";
@@ -344,6 +346,55 @@ describe("structuralCheck", () => {
   it("lets holes through under the sketch policy, and nothing else", () => {
     assert.deepEqual(structuralCheck({ aux: "theorem aux_a : 1 = 1 := by sorry", proof: "  admit" }, SKETCH_POLICY), []);
     assert.deepEqual(structuralCheck({ aux: "", proof: "  native_decide" }, SKETCH_POLICY), ["proof: 'native_decide' is not allowed"]);
+  });
+
+  it("lets #check and example through in aux under the scratch policy only, and the rest of the screen still holds (owner, 2026-11-24)", () => {
+    const aux = "#check Nat.succ_le_iff\n\nexample (n : ℕ) : n + 0 = n := by simp\n\ntheorem aux_a : 1 = 1 := rfl";
+    assert.deepEqual(structuralCheck({ aux, proof: "  simp" }, SCRATCH_POLICY), []);
+    assert.equal(hasScratch({ aux, proof: "  simp" }), true);
+    for (const policy of [undefined, SKETCH_POLICY]) assert.ok(structuralCheck({ aux, proof: "  simp" }, policy).some((r) => /only theorem, lemma, def and abbrev/.test(r)));
+    // Forbidden tokens are refused in a scratch command as anywhere; a name that only starts like one is no scratch command.
+    assert.ok(structuralCheck({ aux: "#check (by native_decide : 1 = 1)", proof: "  simp" }, SCRATCH_POLICY).some((r) => /native_decide/.test(r)));
+    assert.ok(structuralCheck({ aux: "#eval 1", proof: "  simp" }, SCRATCH_POLICY).some((r) => /#eval/.test(r)));
+    assert.equal(hasScratch({ aux: "theorem aux_example : 1 = 1 := rfl\n-- #check x", proof: "  simp" }), false);
+  });
+
+  it("never makes a file with a scratch command valid, even when Lean accepts it", async () => {
+    const validator = new ProofValidator(new FakeChecker(), { policy: SCRATCH_POLICY });
+    const reference = await validator.reference(sketch, fixture);
+    const report = await validator.validate(sketch, withProof("  simp [aux_a]\n  omega", "#check Nat.succ\n\ntheorem aux_a : True := trivial"), reference);
+    assert.equal(report.verdict, "invalid");
+    assert.equal(report.holes, true);
+    assert.match(report.reasons.join(), /scratch commands/);
+    const clean = await validator.validate(sketch, withProof("  simp [aux_a]\n  omega", "theorem aux_a : True := trivial"), reference);
+    assert.equal(clean.verdict, "valid", "without scratch the scratch policy is the sketch policy");
+  });
+
+  it("finds a scratch command behind an `open ... in` or `set_option ... in` prefix, or indented, and never makes such a file valid", async () => {
+    const forms = [
+      "#check Nat.succ\n\ntheorem aux_a : True := trivial",
+      "open Nat in\n#check succ\n\ntheorem aux_a : True := trivial",
+      "set_option pp.all true in\n#check Nat.succ\n\ntheorem aux_a : True := trivial",
+      "open Nat in\nexample : True := trivial\n\ntheorem aux_a : True := trivial",
+      "theorem aux_a : True := trivial\n  #check Nat",
+      "theorem aux_a : True := trivial\n  example : True := trivial",
+    ];
+    const validator = new ProofValidator(new FakeChecker(), { policy: SCRATCH_POLICY });
+    const reference = await validator.reference(sketch, fixture);
+    for (const aux of forms) {
+      assert.equal(hasScratch({ aux, proof: "  simp" }), true, aux);
+      const report = await validator.validate(sketch, withProof("  simp [aux_a]\n  omega", aux), reference);
+      assert.equal(report.verdict, "invalid", aux);
+      assert.equal(report.holes, true, aux);
+    }
+    // Under the other policies too: a file that holds a scratch command is never valid.
+    const sketching = new ProofValidator(new FakeChecker(), { policy: SKETCH_POLICY });
+    const indented = await sketching.validate(sketch, withProof("  simp [aux_a]\n  omega", "theorem aux_a : True := trivial\n  #check Nat"), reference);
+    assert.equal(indented.verdict, "invalid");
+    // A name that only holds the word is no scratch command.
+    for (const aux of ["theorem aux_example : True := trivial", "theorem aux_a : True := aux_b.example", "theorem aux_check : True := trivial"]) {
+      assert.equal(hasScratch({ aux, proof: "  simp" }), false, aux);
+    }
   });
 
   it("allows only aux_ theorems and definitions with plain attributes", () => {

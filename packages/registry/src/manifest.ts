@@ -143,6 +143,11 @@ export interface ContractCase {
   /** Instead of `expect`: the call must fail with this error code, and a message matching `matches`. */
   fails?: { code: CapabilityErrorCode; matches?: string };
   timeoutMs?: number;
+  /**
+   * Settings the host's implementations get for this case over their own, such as a small memory limit that the case
+   * reaches; the case then runs in a registry of its own (`Registry.withSettings`).
+   */
+  settings?: Record<string, Json>;
 }
 
 export interface Capability {
@@ -285,6 +290,7 @@ const CONTRACT_SCHEMA: JsonSchema = {
             additionalProperties: false,
           },
           timeoutMs: { type: "integer", minimum: 1 },
+          settings: { type: "object" },
         },
         additionalProperties: false,
       },

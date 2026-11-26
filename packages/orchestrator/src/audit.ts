@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { BATTERY_RUN, MOVE_NAMES, MOVES, routeStatement } from "@seshat/classical";
 import { BlobStore, extractSubmission, type HarnessEvent, HOLE_VERDICT_KIND, readEvents } from "@seshat/core";
 import { shown } from "@seshat/lit";
 import { informalProofOfNodes } from "@seshat/memory";
@@ -83,6 +84,15 @@ export interface Audit {
   lengths: LengthRecord[];
   /** Output tokens by role and kind (plan change CL0): one row for each role seen in the run. */
   outputKinds: OutputKindRow[];
+  /** The exploration moves of the run's problems (plan change CX1). */
+  moves: AuditMoves;
+}
+
+/** The router's exploration moves (plan change CX1) of each problem's own statement, and how many problems have each. */
+export interface AuditMoves {
+  problems: Array<{ problemId: string; moves: string[]; from: "journal" | "statement" | "none"; certified: boolean }>;
+  /** For each move E1 to E12: the problems tagged with it, and the certified ones among them. */
+  counts: Array<{ move: string; problems: number; certified: number }>;
 }
 
 export interface AuditSources {
@@ -124,14 +134,16 @@ export function audit(src: AuditSources): Audit {
   };
   const problemClaim = new Map<string, string>();
   const claimProblem = new Map<string, string>();
+  const claimStatement = new Map<string, string>();
   const parentOf = new Map<string, string>();
   const taskProblem = new Map<string, string>();
   for (const e of events) {
     if (e.type === "problem.registered") {
       problemClaim.set(e.data.problemId, e.data.claimId);
       claimProblem.set(e.data.claimId, e.data.problemId);
-    } else if (e.type === "claim.created" && e.data.parentId !== undefined) {
-      parentOf.set(e.data.claimId, e.data.parentId);
+    } else if (e.type === "claim.created") {
+      claimStatement.set(e.data.claimId, e.data.statement);
+      if (e.data.parentId !== undefined) parentOf.set(e.data.claimId, e.data.parentId);
     } else if (e.type === "edge.added" && e.data.kind === "decomposes_into") {
       for (const to of e.data.to) if (!parentOf.has(to)) parentOf.set(to, e.data.from);
     } else if (e.type === "task.created" && e.data.problemId !== undefined) {
@@ -234,6 +246,8 @@ export function audit(src: AuditSources): Audit {
   const informalNodes = new Map<string, Array<{ nodeId: string; data: unknown }>>();
   const triageNodes = new Map<string, Array<{ data: unknown }>>();
   const allowance = new Map<string, number>();
+  // The moves M10's router journaled for a problem's own claim (`battery_run`, plan change CX1): the last run wins.
+  const journaledMoves = new Map<string, string[]>();
   let searched = false;
   for (const e of events) {
     if (e.type === "problem.registered" && e.data.allowanceUsd !== undefined) allowance.set(e.data.problemId, e.data.allowanceUsd);
@@ -257,9 +271,14 @@ export function audit(src: AuditSources): Audit {
       gate.set(e.data.problemId, [...(gate.get(e.data.problemId) ?? []), { site: e.data.site, action: e.data.action, by: e.data.by, reason: e.data.reason }]);
     } else if (e.type === "node.recorded") {
       const d = obj(e.data.data);
+      const own = e.data.claimId !== undefined ? claimProblem.get(e.data.claimId) : undefined;
+      if (e.data.kind === BATTERY_RUN && own !== undefined && Array.isArray(d?.moves)) journaledMoves.set(own, d.moves.filter((m): m is string => typeof m === "string"));
       const pid = typeof d?.problemId === "string" ? d.problemId : problemOfClaim(e.data.claimId);
       if (pid === undefined) continue;
-      if (e.data.kind === SKETCH_KIND) sketches.set(pid, [...(sketches.get(pid) ?? []), e.data.data as unknown as SketchRecord]);
+      // The problem's own sketches: a hole's local redraft (DP7, `redraftOf`) is a blueprint of the hole, neither the problem's last sketch nor its file.
+      if (e.data.kind === SKETCH_KIND) {
+        if (d?.redraftOf === undefined) sketches.set(pid, [...(sketches.get(pid) ?? []), e.data.data as unknown as SketchRecord]);
+      }
       else if (e.data.kind === SESSION_KIND) {
         sessionRecords.set(pid, [...(sessionRecords.get(pid) ?? []), e.data.data as unknown as SessionRecord]);
         const r = e.data.data as unknown as SessionRecord;
@@ -418,6 +437,18 @@ export function audit(src: AuditSources): Audit {
       ...(reference !== undefined ? { reference } : {}),
     });
   }
+  const moveProblems: AuditMoves["problems"] = [...problemClaim.entries()].map(([problemId, claimId]) => {
+    const journaled = journaledMoves.get(problemId);
+    const statement = claimStatement.get(claimId);
+    const certified = certifiedOf(problemId);
+    if (journaled !== undefined) return { problemId, moves: journaled, from: "journal", certified };
+    if (statement !== undefined) return { problemId, moves: routeStatement(statement).moves, from: "statement", certified };
+    return { problemId, moves: [], from: "none", certified };
+  });
+  const moveCounts = MOVES.map((move) => {
+    const tagged = moveProblems.filter((p) => p.moves.includes(move));
+    return { move, problems: tagged.length, certified: tagged.filter((p) => p.certified).length };
+  });
   const finished = events.find((e) => e.type === "run.finished");
   const all = [...sessions.values()];
   return {
@@ -431,6 +462,7 @@ export function audit(src: AuditSources): Audit {
     dossiers,
     lengths,
     outputKinds: outputKinds({ events, blob, ...(src.transcript !== undefined ? { transcript: src.transcript } : {}) }),
+    moves: { problems: moveProblems, counts: moveCounts },
   };
 }
 
@@ -505,6 +537,22 @@ function renderOutputKinds(rows: readonly OutputKindRow[], heading: string): str
   return out;
 }
 
+/** The "Exploration moves" section (plan change CX1): how many of the run's problems the router tags with each move. */
+function renderMoves(m: AuditMoves, heading: string): string[] {
+  const from = (f: AuditMoves["problems"][number]["from"]) => m.problems.filter((p) => p.from === f).length;
+  const out = [
+    heading,
+    "",
+    `The moves of each problem's own statement (documentation/classical.md, "Exploration moves"): ${from("journal")} journaled by M10's router, ${from("statement")} computed now from the statement, ${from("none")} with no statement in the journal. A problem has several moves or none; E7, E10 and E11 are never tagged.`,
+    "",
+    "| Move | What | Problems | Certified |",
+    "|---|---|---|---|",
+  ];
+  for (const c of m.counts) out.push(`| ${c.move} | ${MOVE_NAMES[c.move as keyof typeof MOVE_NAMES]} | ${c.problems} | ${c.certified} |`);
+  out.push("");
+  return out;
+}
+
 /** The Markdown of an audit; `level` is the heading depth of its title (an ablation's arm is one level lower). */
 export function renderAudit(a: Audit, title: string, level = 1): string[] {
   const h = (n: number) => "#".repeat(level + n);
@@ -519,6 +567,7 @@ export function renderAudit(a: Audit, title: string, level = 1): string[] {
   ];
   out.push(...renderLength(a.lengths, `${h(1)} Length`));
   out.push(...renderOutputKinds(a.outputKinds, `${h(1)} Output tokens by role and kind`));
+  out.push(...renderMoves(a.moves, `${h(1)} Exploration moves`));
   for (const d of a.dossiers) {
     out.push(`${h(1)} \`${shown(d.problemId, 120)}\` (${d.outcome})`, "");
     out.push(`**Spend**: ${usd(d.spendUsd)}; by site: ${Object.entries(d.spendBySite).map(([s, v]) => `${s} ${usd(v)}`).join(", ") || "none"}.`, "");

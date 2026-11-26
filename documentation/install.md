@@ -166,6 +166,7 @@ Each one is a capability behind the registry: a run uses it when it is there and
 | Tool | What it adds | How |
 |---|---|---|
 | SageMath (`compute.sage`) | computer algebra for the provers, counterexample search | `docker pull` of the pinned image, or pip ([compute.md](compute.md#installing-it)) |
+| Python on Pyodide (`compute.python`) | Python with sympy, scipy, SAT and SDP solvers for the provers, without Docker or a Python install; the compute tool when Sage is absent | the Pyodide 314.0.7 release unpacked, `PYODIDE_DIR` set to it ([compute.md](compute.md#installing-pyodide)) |
 | z3, E, Vampire (`smt.z3`, `atp.eprover`, `atp.vampire`) | SMT and first-order ATPs on translated goals, rebuilt in Lean | `sudo apt install z3 eprover`; Vampire from its [releases](https://github.com/vprover/vampire/releases); commands `Z3_COMMAND`, `EPROVER_COMMAND`, `VAMPIRE_COMMAND` ([classical.md](classical.md#atp-and-smt-with-reconstruction)) |
 | lean-lsp-mcp (`lean.lsp`) | Lean's language server for the provers: goals, hovers, search | `pip install uv`; the harness starts it with `uvx` ([lean-lsp.md](lean-lsp.md#installing-it)) |
 | Pantograph (`lean.goals`) | proof states step by step | [lean-meta.md](lean-meta.md#deployment) |

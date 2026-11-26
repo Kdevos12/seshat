@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { HarnessEvent } from "@seshat/core";
 import { BLUEPRINT_FORMAT, createM12Line, PLANNER_VERSION } from "@seshat/scheduler";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { check, DemoLean, demoResume, demoRun, killedAt, ofType, say } from "./m0-helpers.ts";
+import { check, DemoLean, demoResume, demoRun, killedAt, ofType, proofOf, say } from "./m0-helpers.ts";
 import { BP_AUX, BP_PROOF, blueprintAnswer, HARD_AUX } from "./blueprint-helpers.ts";
 import { loopTelemetry, renderLoop } from "../src/loop-telemetry.ts";
 import { assertSound, consumed, sessionPromptOf } from "./resume-helpers.ts";
@@ -146,13 +146,56 @@ describe("refinement rounds (CA12, PA11)", () => {
     assert.equal(plain.faux.getPendingResponseCount(), 0);
     assert.deepEqual(nodes(plain.events, "hole_verdict").map((v) => [v.verdict, v.reason]), [["too_hard", "turns"], ["proved", undefined], ["proved", undefined], ["proved", undefined]]);
     assert.equal(nodes(plain.events, "m12_session").filter((n) => n.verdict === "too_hard").length, 1, "without longProof the hole has its one session and is split");
-    const long = await run(responses(true), hole, { triage: true, longProof: {} });
+    // `depth: 0`: the hole goes to the round, not to its local redraft (DP7, long-proof.test.ts).
+    const long = await run(responses(true), hole, { triage: true, longProof: { depth: 0 } });
     assert.equal(long.faux.getPendingResponseCount(), 0);
     const tooHard = nodes(long.events, "m12_session").filter((n) => n.verdict === "too_hard");
     assert.deepEqual(tooHard.map((n) => [n.session, n.turns, n.reason]), [[1, 2, "turns"], [2, 2, "turns"]], "one continuation, then no more");
     assert.deepEqual(nodes(long.events, "hole_verdict").map((v) => [v.verdict, v.reason]), [["too_hard", "turns"], ["too_hard", "turns"], ["proved", undefined], ["proved", undefined], ["proved", undefined]]);
     assert.equal(nodes(long.events, "m12_sketch").length, 2, "then a refinement round splits it");
     assert.match(renderLoop(loopTelemetry(long.events)).join("\n"), /Verdicts too_hard by reason: turns 2\./);
+  });
+
+  it("with holeProgress, a hole cut by its turns goes on while Lean's errors fall from session to session (VL3)", { timeout: 60000 }, async () => {
+    // `errs_K` is a hole proof with K Lean errors: the sessions go 3 to 2, 2 to 1, then 1 to 1 (no progress), so two continuations, then the round splits it.
+    const lean = new DemoLean((code) => {
+      const k = /errs_(\d+)/.exec(proofOf(code) ?? "")?.[1];
+      return k === undefined ? blueprintAnswer(code) : { messages: Array.from({ length: Number(k) }, () => ({ severity: "error" as const, pos: { line: 1, column: 0 }, text: "unsolved goals" })) };
+    });
+    const session = (a: number, b: number) => [check(`exact errs_${a}`), check(`exact errs_${b}`)];
+    // The M12 option itself, or `RunConfig.longProof.holeProgress`, which sets it.
+    for (const [options, longProof] of [[{ holeProgress: true }, { depth: 0 }], [{}, { depth: 0, holeProgress: true }]] as const) {
+      const { events, faux } = await run(
+        [check(HARD_PROOF, HARD_BLUEPRINT), say("Two lemmas are left."), ...session(3, 2), ...session(2, 1), ...session(1, 1), answer(SPLIT_AUX, SPLIT_PROOF), check("exact hole_ok"), check("exact hole_ok")],
+        { holeTurns: 2, ...options },
+        { triage: true, longProof },
+        lean,
+      );
+      assert.equal(faux.getPendingResponseCount(), 0);
+      const tooHard = nodes(events, "m12_session").filter((n) => n.verdict === "too_hard");
+      assert.deepEqual(tooHard.map((n) => [n.session, n.reason, n.progress]), [[1, "turns", { first: 3, last: 2 }], [2, "turns", { first: 2, last: 1 }], [3, "turns", { first: 1, last: 1 }]], JSON.stringify(longProof));
+      assert.equal(nodes(events, "m12_sketch").length, 2, "then a refinement round splits it");
+    }
+  });
+
+  it("with holeProgress, a check that Lean did not answer (a timeout) measures no distance (VL3)", { timeout: 60000 }, async () => {
+    // Session 2 goes from 2 errors to a check that timed out: no message, which is no distance 0, so the session made no progress and the round splits the hole.
+    const lean = new DemoLean((code) => {
+      const proof = proofOf(code) ?? "";
+      if (proof.includes("tmo")) return { error: { status: "timeout", message: "the check took too long" } };
+      const k = /errs_(\d+)/.exec(proof)?.[1];
+      return k === undefined ? blueprintAnswer(code) : { messages: Array.from({ length: Number(k) }, () => ({ severity: "error" as const, pos: { line: 1, column: 0 }, text: "unsolved goals" })) };
+    });
+    const { events, faux } = await run(
+      [check(HARD_PROOF, HARD_BLUEPRINT), say("Two lemmas are left."), check("exact errs_3"), check("exact errs_2"), check("exact errs_2"), check("exact tmo"), answer(SPLIT_AUX, SPLIT_PROOF), check("exact hole_ok"), check("exact hole_ok")],
+      { holeTurns: 2, holeProgress: true },
+      { triage: true, longProof: { depth: 0 } },
+      lean,
+    );
+    assert.equal(faux.getPendingResponseCount(), 0);
+    const tooHard = nodes(events, "m12_session").filter((n) => n.verdict === "too_hard");
+    assert.deepEqual(tooHard.map((n) => [n.session, n.reason, n.progress]), [[1, "turns", { first: 3, last: 2 }], [2, "turns", { first: 2, last: 2 }]]);
+    assert.equal(nodes(events, "m12_sketch").length, 2, "then a refinement round splits it");
   });
 
   it("does nothing without the option refine: a hole that ended too hard is the end of it", { timeout: 60000 }, async () => {

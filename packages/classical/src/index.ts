@@ -4,6 +4,8 @@
  */
 export * from "./battery.ts";
 export * from "./capabilities.ts";
+export * from "./certificates.ts";
+export * from "./compute.ts";
 export * from "./firstorder.ts";
 export * from "./line.ts";
 export * from "./nontrivial.ts";
@@ -11,6 +13,7 @@ export * from "./parse.ts";
 export * from "./posterior.ts";
 export * from "./premises.ts";
 export * from "./process.ts";
+export * from "./rational.ts";
 export * from "./probe.ts";
 export * from "./router.ts";
 export * from "./sandbox.ts";

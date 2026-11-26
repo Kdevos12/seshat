@@ -47,15 +47,24 @@ export interface PinnedTool {
 }
 
 /**
+ * The compute capabilities in the order a run prefers them, and the ones it may use in place of one that cannot be reached: "the
+ * host's compute tool" of `RunConfig.autoTool` (CA17) is the first of them that the host offers and that answers, so SageMath where it
+ * runs and Python on Pyodide without it (plan change CX3). One list with line M10's certificate stage (`@seshat/classical`, compute.ts).
+ */
+export { COMPUTE_TOOLS, computeFallbacks } from "@seshat/classical";
+
+/**
  * Pins each capability to the first of the host's implementations that answers now, so that every
  * call of a run goes to the same implementation, and none goes first to one that is down. A
- * capability none of whose implementations answers is a problem; `notes` says which ones were
- * passed over, and why.
+ * capability none of whose implementations answers is replaced by the first of its `fallbacks`
+ * that answers (the pinned tool then names that capability), and is a problem when none does;
+ * `notes` says which ones were passed over, and why.
  */
 export async function pinTools(
   registry: Registry,
   ids: readonly string[],
   optional: readonly string[] = [],
+  fallbacks: Readonly<Record<string, readonly string[]>> = {},
 ): Promise<{ tools: PinnedTool[]; problems: string[]; notes: string[]; dropped: Array<{ capability: string; reason: string }> }> {
   const tools: PinnedTool[] = [];
   const problems: string[] = [];
@@ -66,6 +75,22 @@ export async function pinTools(
     const index = health.findIndex((h) => h.ok);
     const down = health.slice(0, index === -1 ? health.length : index).map((h) => `${h.implementation}: ${h.detail}`);
     const up = health[index];
+    if (up === undefined && Object.hasOwn(fallbacks, id)) {
+      let replaced = false;
+      for (const other of fallbacks[id] ?? []) {
+        const checked = await registry.health(other);
+        const answer = checked.find((h) => h.ok);
+        if (answer === undefined) {
+          down.push(...checked.map((h) => `${other}/${h.implementation}: ${h.detail}`));
+          continue;
+        }
+        tools.push({ capability: other, implementation: answer.implementation, version: answer.version });
+        notes.push(`${id} cannot be reached on host ${registry.host.host} (${down.join("; ")}): ${other} is used in its place`);
+        replaced = true;
+        break;
+      }
+      if (replaced) continue;
+    }
     if (up === undefined) {
       // A tool the set added (`RunConfig.optionalTools`) and the person did not name is dropped with a warning: only a named tool fails the run.
       if (optional.includes(id)) {

@@ -86,7 +86,7 @@ import { checkIntake, type IntakeConfig, INTAKE_P_SUCCESS, intakeStep, recordCon
 import { checkConsult, type ConsultConfig } from "./consult.ts";
 import { describeRoles, RoleBook, type RolesConfig, resolveRoles } from "./roles.ts";
 import { recordSketch, sketchProblem } from "./sketch.ts";
-import { checkTools, pinTools, toolName } from "./tools.ts";
+import { checkTools, COMPUTE_TOOLS, computeFallbacks, pinTools, toolName } from "./tools.ts";
 import { fileStatement } from "./solve-tools.ts";
 import { computeFirstCases } from "./first-cases.ts";
 import { frontierConfigProblems } from "./frontier-view.ts";
@@ -94,7 +94,7 @@ import { type RestartsConfig, resolveRestarts, restartsConfigProblems } from "./
 import { checkLeanDraft, leanDraft, type LeanDraftConfig, type LeanDraftDeps } from "./lean-draft.ts";
 import { checkSorryBattery, type SorryBatteryConfig } from "./sorry-battery.ts";
 import { type CardsConfig, checkCards, solveCards } from "./cards.ts";
-import { DEFAULT_DRY_CHECKS, type LongProofConfig, DEFAULT_LONG_TRIAGE_USD, LONG_PROOF_WEIGHTS, longProofConfigProblems, recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
+import { DEFAULT_DRY_CHECKS, DEFAULT_REDRAFT_DEPTH, type LongProofConfig, DEFAULT_LONG_TRIAGE_USD, LONG_PROOF_WEIGHTS, longProofConfigProblems, recordTriage, TRIAGE_KIND, triageInputOfProjection, triageOfNodes, triageProblem } from "./triage.ts";
 import { runChild } from "./child.ts";
 import { checkInformalFirst, hasInformalProof, HITS_PER_FACT, INFORMAL_CALL_SHARE, INFORMAL_LINE, type InformalFirst, informalSettings, lookupFacts, recordInformalProof, runInformalLoop } from "./informal.ts";
 import type { TestLemmas } from "@seshat/induction";
@@ -133,7 +133,9 @@ export interface RunConfig {
    * A `direct` capability (the host's compute tool, `compute.sage`) that a problem's sessions get besides `tools` when the router files
    * the problem's statement as finite, about a graph or about numbers (`fileStatement`, documentation/literature.md, "Solve options"). It is
    * checked and pinned at the start of the run like a tool, and recorded as `autoTool` in `run.started`; the problems that are not filed do
-   * not get it. Absent: none, and a run that records and prompts as it always did.
+   * not get it. A compute tool that cannot be reached at the start is replaced by the next of `COMPUTE_TOOLS` the host offers and that
+   * answers (compute.python when Sage is absent, plan change CX3), which is then the one recorded. Absent: none, and a run that records and
+   * prompts as it always did.
    */
   autoTool?: string;
   /**
@@ -185,7 +187,9 @@ export interface RunConfig {
    * the budget gate follows the frontier's growth for such a problem: a closed hole or a registered healthy blueprint is progress, its sessions go on while
    * holes close, and it stops, journaling why, after `dryChecks` (default 3) finished sessions in a row that closed none. With line M12's `blueprints` and an
    * accepted informal proof (`informalFirst`), `draft` (default true) makes the first blueprint a `have` sketch the planner writes from that proof and the harness lifts
-   * into holes before the first outer session (LP2, DP1), and `drafts` (default 1) asks for that many and keeps the one with the fewest holes (DP3). Absent: off.
+   * into holes before the first outer session (LP2, DP1), and `drafts` (default 1) asks for that many and keeps the one with the fewest holes (DP3); a hole that ends
+   * `too_hard` for a reason other than the budget gets that draft with itself as the target, registered on its claim, nested at most `depth` deep (default 1; 0: off; DP7).
+   * Absent: off.
    */
   longProof?: LongProofConfig;
   /** The prompt cache retention asked of the provider with every request of a session; absent: the provider's own default. */
@@ -706,7 +710,9 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     problems.push("private: the run asks Jev for decisions, which sends proof states to a third party; --private sends nothing outside, so choose one");
   }
   if (problems.length > 0) throw new RunSetupError(`invalid run configuration: ${problems.join("; ")}`);
-  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3) and its frozen links (LP3) where M12 has blueprints, and M3's candidates from them (DP5); a value the person gave for those options stays.
+  // `longProof` turns on M12's draft from the informal proof (plan changes LP2, DP1, DP3), its frozen links (LP3), its local redraft of a hole that ended too hard
+  // (DP7, to `depth`) and, with `holeProgress`, the continuation of a hole while Lean shows progress (VL3) where M12 has blueprints, and M3's candidates from them (DP5);
+  // a value the person gave for those options stays.
   const lp = config.longProof;
   const lineOptions =
     lp !== undefined && (config.lines ?? []).includes("M12") && config.lineOptions?.M12?.blueprints === true
@@ -715,6 +721,8 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
           M12: {
             ...(lp.draft !== false ? { fromInformal: true, ...(lp.drafts !== undefined ? { drafts: lp.drafts } : {}) } : {}),
             ...(lp.freeze !== false ? { freeze: true } : {}),
+            ...((lp.depth ?? DEFAULT_REDRAFT_DEPTH) > 0 ? { redraftDepth: lp.depth ?? DEFAULT_REDRAFT_DEPTH } : {}),
+            ...(lp.holeProgress === true ? { holeProgress: true } : {}),
             ...config.lineOptions.M12,
           },
           // M3 reads its candidates from the lemmas M12 locks, failed attempts included (DP5).
@@ -728,10 +736,10 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     const refusals = resumeRefusals(enabled.lines);
     if (refusals.length > 0) throw new RunSetupError(`a consortium run (--human or a turn limit) is resumed after each turn, and it cannot be: ${refusals.join("; ")}`);
   }
-  // What of the run is known before the registry is built: the prompts, the policy and the lines.
+  // What of the run is known before the registry is built: the prompt's version, the policy and the lines. The prompt's hash
+  // names the provers' tools, so it is taken once they are pinned (a compute tool that cannot be reached is replaced then).
   const proverTemplate = config.prompts?.proverSystem;
   const promptVersion = proverTemplate === undefined ? PROMPT_VERSION : `${PROMPT_VERSION}+${sha256Hex(proverTemplate).slice(0, 8)}`;
-  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), [...config.tools, ...(config.autoTool !== undefined ? [config.autoTool] : [])].map(toolName), proverTemplate, config.editTool === true) };
   // Where the learned records of this run come from (documentation/memory.md, "Provenance and epochs").
   const provenance: ProvenanceContext = {
     modelId: config.model,
@@ -757,7 +765,6 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
     const refusals = resumeRefusals(enabled.lines);
     if (refusals.length > 0) throw new RunSetupError(`the run cannot be resumed: ${refusals.join("; ")}`);
     const changed = configMismatches(resume.started.config, {
-      prompt: promptRecord,
       policy: policyRecord,
       ...(linesRecord.length > 0 ? { lines: linesRecord } : {}),
     });
@@ -924,12 +931,22 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
   const autoIds = config.autoTool !== undefined ? [config.autoTool] : [];
   const toolProblems = checkTools(registry, [...config.tools, ...autoIds]);
   if (toolProblems.length > 0) return await abandon(`the tools of the run: ${toolProblems.join("; ")}`, undefined, registry);
+  // "The host's compute tool" (CA17): when the run's `autoTool` cannot be reached, the next compute tool the host offers takes its place
+  // (compute.python on Pyodide when Sage is absent, plan change CX3). A fallback the run could not give its provers is not tried.
+  const autoFallbacks = config.autoTool !== undefined ? computeFallbacks(registry, config.autoTool).filter((id) => !config.tools.includes(id) && checkTools(registry, [id]).length === 0) : [];
   // A tool that cannot be reached now would answer every prover's call with an error.
-  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds], config.optionalTools ?? []);
+  const pinnedAll = await pinTools(registry, [...config.tools, ...autoIds], config.optionalTools ?? [], config.autoTool !== undefined ? { [config.autoTool]: autoFallbacks } : {});
   if (pinnedAll.problems.length > 0) return await abandon(pinnedAll.problems.join("; "), undefined, registry);
-  // The run-wide tools, and the one a problem gets only when it is filed (`autoTool`): pinned together, recorded apart.
-  const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => t.capability !== config.autoTool) };
-  const pinnedAuto = pinnedAll.tools.find((t) => t.capability === config.autoTool);
+  // The run-wide tools, and the one a problem gets only when it is filed (`autoTool`, or the fallback that replaced it): pinned together, recorded apart.
+  const autoPinned = (t: { capability: string }): boolean => t.capability === config.autoTool || autoFallbacks.includes(t.capability);
+  const pinned = { ...pinnedAll, tools: pinnedAll.tools.filter((t) => !autoPinned(t)) };
+  const pinnedAuto = pinnedAll.tools.find(autoPinned);
+  // The prompt the provers get names the tools they get: the pinned ones, a fallback in place of the tool it replaced.
+  const promptRecord = { version: promptVersion, hash: promptHash(effectiveNotesChars(config), [...pinned.tools, ...(pinnedAuto !== undefined ? [pinnedAuto] : [])].map((t) => toolName(t.capability)), proverTemplate, config.editTool === true) };
+  if (resume !== undefined) {
+    const changed = configMismatches(resume.started.config, { prompt: promptRecord });
+    if (changed.length > 0) return await abandon(`the run cannot be resumed with this code: ${changed.join("; ")}`, undefined, registry);
+  }
   // The statement identity of the run is the one an enabled line gives; without one, the text's.
   const giver = enabled.lines.find((entry) => entry.line.identity !== undefined)?.line;
   let identity: StatementIdentity | undefined;
@@ -1684,7 +1701,7 @@ async function execute(o: RunOptions, resume?: RecordedRun): Promise<RunResult> 
 
       // The first cases of the statement (`RunConfig.firstCases`). The compute tool is the run's `autoTool` (or a compute tool it was given by name), whether or not the
       // router files this statement: the router does not read big operators, and a sum is the shape the table is for. Computed once, on first use.
-      const computeTool = pinnedAuto ?? pinned.tools.find((t) => t.capability === "compute.sage");
+      const computeTool = pinnedAuto ?? pinned.tools.find((t) => COMPUTE_TOOLS.includes(t.capability));
       let casesDone: { value: Awaited<ReturnType<typeof computeFirstCases>> } | undefined;
       const casesOnce = async (): Promise<Awaited<ReturnType<typeof computeFirstCases>>> => {
         casesDone ??= {

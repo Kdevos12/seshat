@@ -1,4 +1,4 @@
-import { maskCommentsAndStrings, type Submission, type ValidationReport } from "@seshat/core";
+import { collapseWhitespace, maskCommentsAndStrings, splitStatement, type Submission, type ValidationReport } from "@seshat/core";
 import { parseSignature } from "@seshat/graph";
 
 /**
@@ -82,6 +82,20 @@ export function replaceBodies(proof: string, replacements: ReadonlyArray<{ step:
   let out = proof;
   for (const { step, body } of [...replacements].sort((a, b) => b.step.bodyFrom - a.step.bodyFrom)) out = `${out.slice(0, step.bodyFrom)} ${body}${out.slice(step.bodyTo)}`;
   return out;
+}
+
+/**
+ * The name of the proof's first `have` step when it is left to `sorry` and its type is the target's conclusion, read as text with its spacing collapsed: a
+ * draft whose first step is the theorem itself, with nothing new in scope, makes no step toward it (run 7, 1999 A2, VL1: `have h_2 : IsSumSq p := by sorry`
+ * under the theorem's own hypothesis). A later step that restates the conclusion is a real step, the one that combines the steps before it, which it has as
+ * hypotheses (`have h_final : goal := by sorry` after `h1` and `h2`). Undefined when the first step is no such step.
+ */
+export function restatedStep(proof: string, target: string): string | undefined {
+  const goal = splitStatement(target)?.type ?? target;
+  const want = collapseWhitespace(goal).trim();
+  const first = haveSteps(proof)[0];
+  if (first === undefined || !sorrySteps(proof).some((step) => step.start === first.start)) return undefined;
+  return collapseWhitespace(proof.slice(first.typeFrom, first.typeTo)).trim() === want ? first.name : undefined;
 }
 
 /** What `liftHaves` is given: a Lean check of a file with holes, and, when the run has it, the classical battery on a checked file's `sorry` (`closeSorries` of the orchestrator). */

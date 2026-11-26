@@ -14,6 +14,8 @@ export interface Script {
   timeMs?: number;
   /** Goes over Lean's time limit. */
   timeout?: boolean;
+  /** Parses, but says it is no longer available (Mathlib's `polyrith` once its external service shut down). */
+  retired?: boolean;
 }
 
 /** The tactic of a snippet written by `snippetFor`: the lines after `:= by`. */
@@ -61,6 +63,9 @@ export class ScriptedLean implements LeanChecker {
       if (script.timeout === true) return { id: snippet.id, status: "timeout", messages: [], sorries: [], timeMs, error: "timeout" };
       if (script.unknown === true) {
         return { id: snippet.id, status: "lean_error", messages: [{ severity: "error", pos: { line: 4, column: 2 }, text: `unknown tactic` }], sorries: [], timeMs };
+      }
+      if (script.retired === true) {
+        return { id: snippet.id, status: "lean_error", messages: [{ severity: "error", pos: { line: 4, column: 2 }, text: `${tactic} is no longer available, as the external service it relied on has been shut down` }], sorries: [], timeMs };
       }
       if (script.ok === true) {
         const messages = script.suggests !== undefined ? [{ severity: "info" as const, pos: { line: 4, column: 2 }, text: `Try this: ${script.suggests}` }] : [];

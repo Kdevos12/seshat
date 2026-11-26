@@ -1601,6 +1601,58 @@ off by default until its arm wins. Each item lives in the one module the change'
 - Task 71 (CL4, and CL3 if CL0 passes): an arm `solve-v2-long-draft` (`solve-v2-long` plus `gate.draft`), with the
   kill rule of CL4; CL3 (`roles.hole.settings.style: "lean_draft"`) only if prose is above 20% of hole output tokens.
 
+### Tasks 72 to 76: local recursion, and very long proofs (DP7, VL1 to VL10)
+
+DP7 (Ruling 44, made unconditional by the owner on 2026-11-24) and the plan change
+`plans/plan-change-very-long-proofs.md` (VL1 to VL10, approved in full on 2026-11-24, Ruling 46). Every change sits behind
+`RunConfig.longProof` or the campaign; `v1` and `v2` stay byte-identical. Each item lives in the one module the change's
+design table names. In this order:
+
+- Task 72 (VL1, VL2): `harness audit`'s length section gains, per hole, a class with its evidence (A false or suspect,
+  B cut while progressing, C no progress, D ill-posed) and, per run, three slopes (Lean seconds per check against the
+  locked prefix's lines, input tokens per request against the frozen links, the share of spend on holes that end false,
+  suspect or abandoned). Then a free pass on run 7's journal, and a Lean pass with no model (battery and `plausible`
+  on every hole); the table goes in the ledger.
+- Task 73 (DP7): under `longProof`, a `too_hard` hole whose reason is not `budget` gets DP1's draft with the hole as
+  its target, in the same journal, registered on the hole's claim; depth is the nesting of `decomposes_into` edges, at
+  most `longProof.depth` (default 1; 0 turns the recursion off); every call is asked of the problem's budget gate.
+- Task 74 (VL3, VL4, VL5, in the order VL1's classes set): `holeContinuation: "progress"`; a suspect hole is priced low
+  in M12's proof numbers and redrafted by DP7 first; a DEFS region in the draft, and a bounded view and search of the
+  frozen links.
+- Task 75 (VL6, VL9): a Lean file as `--sketch`, registered as the first blueprint; `decide +kernel` in the battery
+  after one real-Lean check, and chunk lemmas the battery closes without a model.
+- Task 76 (VL10): `harness campaign --long`, a preset only; its B5 run (at most $5) only on the owner's go. VL7 and VL8
+  wait for the measured numbers that call for them.
+
+### Tasks 77 to 80: CPU tools for non-linear exploration (CX1 to CX10)
+
+The plan change `plans/plan-change-cpu-exploration.md` (CX1 to CX10, approved in full on 2026-11-25, Ruling 47). Each item
+lives in the one module its design table names; no new package. In this order:
+
+- Task 77 (CX1, CX2): the M10 router tags each goal with its moves (E1 to E12) and `harness audit` counts them, checked
+  on 40 hand-labelled statements; the first real M16 run, on a Sidon-set construction, against an `iid` arm at the same
+  spend (`M16.strategy`). The two measurements order Tasks 78 to 80.
+- Task 78 (CX3, CX4): the capability `compute.python` on Pyodide, the host's compute tool when Sage is absent; a
+  certificate stage in M10's battery (modular obstruction, local Gröbner cofactors, rounded SOS, Bernstein boxes), each
+  candidate a screened Lean text submitted through `validate`; one real-Lean pass at $0.
+- Task 79 (CX5 to CX8, CX10): local search between M16's model rounds (CA20's graph search folded in); SAT and MaxSAT
+  encoders for M11; Z3 recipes for invariants and small optima; M8's guessing and growth through `compute.python`; one
+  heuristic card per move.
+- Task 80 (CX9): native packs, each only on a measured need. The paid comparison run (at most $1) only on the owner's go.
+
+### Tasks 81 to 83: a coding agent behind Seshat, and models by role and depth (EA1 to EA6, MM1 to MM3)
+
+The plan change `plans/plan-change-coding-agents.md` (approved on 2026-11-25, Ruling 48). Off by default; no benchmark
+gates it. In this order:
+
+- Task 81 (EA1, EA2): `harness doctor` checks the configured coding agents ($0); ACP as a second transport of
+  `library-builder`'s `coding-agent` builder (`agent.transport`, default `"cli"`, byte-identical).
+- Task 82 (EA3, MM1, after DP7 merges): the reasoning partner on a hole that is `too_hard` at DP7's maximum depth
+  (`RunConfig.externalAgent`; its proof goes through `validate`, its text is advice); `roles.<role>.deeper` for the
+  role's calls at depth 1 or more.
+- Task 83 (EA4, EA5, EA6, MM2): the `compute` job (`harness agent compute`), the connector's documentation page, the
+  settings panel's switch and its model picker per role. MM3 only on the owner's go and a cap.
+
 ## Later (not scheduled)
 
 - Problem reformulation as a family of tools (the user, 2026-10-20): turning a problem into a

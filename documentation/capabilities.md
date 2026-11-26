@@ -357,6 +357,20 @@ printed out. It is stateful, one Sage session per scope, and `direct`. Its imple
 contract has 16 cases. [compute.md](compute.md) covers the installation, the settings, the
 resources it takes, and what it offers and refuses.
 
+## `compute.python`
+
+Python 3.14 on Pyodide, with numpy, scipy, sympy, networkx, mpmath, python-sat, highspy, clarabel and
+gmpy2 (plan change CX3): Python code in, the `repr` of its last line's value and what it printed out,
+the same shape as `compute.sage`. It is stateful, one interpreter per scope in a Node process of its
+own started with `--permission`, an empty environment, no JavaScript module and no network, and
+`direct`. Its implementation `pyodide` (factory `pyodide`, in `@seshat/registry`) reads a local copy
+of Pyodide 314.0.7 (`pyodideDir`, `PYODIDE_DIR` in the `local` profile) and is unavailable without
+one; Pyodide is not a dependency of the harness. The `local` profile offers it, `optional`; it is the
+host's compute tool when Sage does not answer. Its contract has 19 cases, which need the real
+Pyodide and have not run; `pnpm test` runs the implementation against a stand-in.
+[compute.md](compute.md#python-on-pyodide-computepython) covers the isolation, the installation and
+the settings.
+
 ## `oeis.search`
 
 Integer sequences in the On-Line Encyclopedia of Integer Sequences. From consecutive terms, or from a
@@ -527,7 +541,11 @@ output, and an optional `timeoutMs`. A case may also have:
 - `before`: inputs called first, in the case's scope, for a case about state (stateful capabilities
   only);
 - `fails` in place of `expect`: `{"code": "failed", "matches": "..."}`, the error the call must end
-  with, and a regular expression its message must match.
+  with, and a regular expression its message must match;
+- `settings`: settings that each of the host's implementations gets for this case over its own,
+  for a check that needs a limit the host does not set (the memory case of `compute.python` runs
+  with `memoryMb` 256). The case runs in a registry of its own (`Registry.withSettings`), closed
+  after the case.
 
 Each case of a stateful capability runs in a scope of its own, released after the case.
 

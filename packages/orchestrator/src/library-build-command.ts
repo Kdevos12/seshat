@@ -2,7 +2,9 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { BlobStore, Journal } from "@seshat/core";
 import { LakeCertifier } from "@seshat/lean-local";
+import { defaultArgs, LEAN_LSP_MCP_VERSION, serverVariables } from "@seshat/lean-lsp";
 import {
+  type AcpMcpServer,
   activeRuns,
   adoptBuild,
   type AgentSettings,
@@ -37,19 +39,25 @@ export interface CodingAgentConfig {
 export interface LibraryBuilderConfig {
   builder: "none" | "coding-agent";
   "coding-agent"?: CodingAgentConfig;
+  /** Every value a `${env:NAME}` of the section expanded to: the builder hides them in what it journals of the command. */
+  secrets?: string[];
 }
 
-/** Replaces `${env:NAME}` by the variable; a variable that is not set is an error, never an empty string (a key is never guessed). */
-export function expandEnv(value: unknown, env: Readonly<Record<string, string | undefined>> = process.env): unknown {
+/**
+ * Replaces `${env:NAME}` by the variable; a variable that is not set is an error, never an empty string (a key is never guessed).
+ * Each value put in is appended to `expanded` when it is given.
+ */
+export function expandEnv(value: unknown, env: Readonly<Record<string, string | undefined>> = process.env, expanded?: string[]): unknown {
   if (typeof value === "string") {
     return value.replace(/\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name: string) => {
       const v = env[name];
       if (v === undefined || v === "") throw new LibraryBuilderConfigError(`the variable ${name}, which the library builder's config names, is not set`);
+      expanded?.push(v);
       return v;
     });
   }
-  if (Array.isArray(value)) return value.map((v) => expandEnv(v, env));
-  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, expandEnv(v, env)]));
+  if (Array.isArray(value)) return value.map((v) => expandEnv(v, env, expanded));
+  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, expandEnv(v, env, expanded)]));
   return value;
 }
 
@@ -63,11 +71,26 @@ export function loadLibraryBuilderConfig(path: string, env: Readonly<Record<stri
   }
   if (raw.builder !== "none" && raw.builder !== "coding-agent") throw new LibraryBuilderConfigError(`${path}: builder must be none or coding-agent, got ${JSON.stringify(raw.builder)}`);
   if (raw.builder === "none") return { builder: "none" };
-  const section = expandEnv(raw["coding-agent"], env) as CodingAgentConfig | undefined;
+  const secrets: string[] = [];
+  const section = expandEnv(raw["coding-agent"], env, secrets) as CodingAgentConfig | undefined;
   if (section === undefined || typeof section.repo !== "string" || section.agent === undefined || section.certifier === undefined) {
     throw new LibraryBuilderConfigError(`${path}: coding-agent needs agent, repo and certifier`);
   }
-  return { builder: "coding-agent", "coding-agent": section };
+  return { builder: "coding-agent", "coding-agent": section, secrets: [...new Set(secrets)] };
+}
+
+/**
+ * The MCP server an ACP agent is given when its settings name none (plan change EA2): the `lean-lsp-mcp` command that `lean.lsp`
+ * wraps (`uvx` with the pinned release, the harness's own variables), pointed at the agent's clone.
+ */
+export function defaultAcpMcpServer(): AcpMcpServer {
+  return { name: "lean-lsp", command: "uvx", args: defaultArgs("uvx", LEAN_LSP_MCP_VERSION), env: serverVariables({ command: "uvx" }, "{clone}") };
+}
+
+/** The agent's settings as the builder gets them: over ACP with no `acp.mcpServers`, the default server; otherwise as written. */
+export function withAcpDefaults(agent: AgentSettings): AgentSettings {
+  if (agent.transport !== "acp" || agent.acp?.mcpServers !== undefined) return agent;
+  return { ...agent, acp: { ...agent.acp, mcpServers: [defaultAcpMcpServer()] } };
 }
 
 /** The builder the config selects. Throws when the sandbox rules are not met (the agent's, the certifier's). */
@@ -75,8 +98,9 @@ export function makeLibraryBuilder(config: LibraryBuilderConfig): { builder: Lib
   if (config.builder === "none") return { builder: new NoneBuilder(), budget: {}, timeoutSec: 60 };
   const c = config["coding-agent"] as CodingAgentConfig;
   const builder = new CodingAgentBuilder({
-    settings: c.agent,
+    settings: withAcpDefaults(c.agent),
     repo: resolve(c.repo),
+    ...(config.secrets !== undefined ? { secrets: config.secrets } : {}),
     ...(c.build !== undefined ? { build: c.build } : {}),
     certifierFor: (projectDir) => new LakeCertifier({ ...c.certifier, projectDir }),
   });

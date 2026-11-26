@@ -18,6 +18,7 @@ import {
   loadInstalledPacks,
   loadHostProfile,
   MissingVariableError,
+  pythonFactory,
   Registry,
   type ImplementationFactory,
   type LeanEnvPin,
@@ -50,6 +51,7 @@ export const FACTORIES: Readonly<Record<string, ImplementationFactory>> = {
   z3: z3Factory(),
   vampire: vampireFactory(),
   eprover: eproverFactory(),
+  pyodide: pythonFactory(),
 };
 
 export interface OpenRegistryOptions extends Omit<RegistryOptions, "catalog" | "host" | "factories" | "leanEnv"> {

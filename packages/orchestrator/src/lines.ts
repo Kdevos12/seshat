@@ -1,4 +1,4 @@
-import { M10 } from "@seshat/classical";
+import { M10, registryCompute } from "@seshat/classical";
 import { M4 } from "@seshat/context";
 import { fleet } from "@seshat/fleet";
 import { graphSearch, M13, M16, M8 } from "@seshat/induction";
@@ -13,8 +13,14 @@ import { M14 } from "@seshat/repair";
 import { m12Line, m15Line, m18Line } from "@seshat/scheduler";
 import { M1 } from "./m1.ts";
 
-/** M11 with the search beyond the lists of graphs (CA20), which lives in @seshat/induction: `@seshat/models` cannot import it. Only the option `M11.graphs` makes it run. */
-const M11 = createM11({ graphSearch });
+/**
+ * M11 with the search beyond the lists of graphs (CA20), which lives in @seshat/induction, and the host's compute tool for its SAT encoders
+ * (CX6, python-sat first), chosen by @seshat/classical: `@seshat/models` cannot import either. Only the options `M11.graphs` and `M11.sat` make them run.
+ */
+const M11 = createM11({
+  graphSearch,
+  compute: (problem) => registryCompute(problem.registry, { actor: "line:M11", scope: `${problem.runId}/${problem.problemId}`, needs: ["pysat"] }),
+});
 
 /**
  * The lines a run can enable, by id (documentation/lines.md). A line that is planned and not

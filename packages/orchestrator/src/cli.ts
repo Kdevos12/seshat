@@ -34,6 +34,7 @@ import { DEFAULT_LIBRARY_REGISTRY, libraryDefinitionsCommand, libraryDeprecateCo
 import { libraryBuildCommand, libraryGapsCommand, LibraryBuilderConfigError } from "./library-build-command.ts";
 import { buildReport, renderRunReport } from "./report.ts";
 import { commandHelp, shortHelp } from "./help.ts";
+import { certificatesCommand } from "./certificate-pass.ts";
 import { watchProgress } from "./progress.ts";
 import { resumeCommand, writeResult } from "./result.ts";
 import { writeView } from "./view.ts";
@@ -58,6 +59,7 @@ const usage = `usage:
   harness health [CAPABILITY] [--host HOST]
   harness lit probe [--host NAME] [--query "words"] [--limit N] [--out DIR] [--no-cache]   (what each literature site answers, and what the parser makes of it)
   harness contract CAPABILITY [--host HOST] [--implementation ID] [--case NAME]... [--out FILE]
+  harness certificates FILE [--host HOST] [--problem ID]... [--out FILE]   (line M10's certificate stage alone on a small bench such as bench/cx4-certificates.json: no model, no claim, $0; documentation/classical.md)
   harness models [PROVIDER]
   harness lean-env (resolve NAME [--find] | build NAME | show [NAME]) [--env-dir DIR]
   harness run --checkout DIR --model PROVIDER/ID (--sample N [--seed S] | --problem ID... | --all | --sequence ID | --tag analogy|induction)
@@ -106,7 +108,7 @@ const usage = `usage:
               [--turn-usd X] [--lines ID,...] [--lean-search] [--consult PROVIDER/ID [--consult-calls N] [--consult-tokens N]] [--role ROLE=PROVIDER/ID]... [--role-setting ROLE.KEY=VALUE]... [--sketch FILE] [--consolidation] [--offpeak [--offpeak-max-wait MINUTES]] [--no-check] [--ask-stdin] [--defaults v1|v2] [--settings FILE] [--quiet]
               [--tool ID ...] [--auto-tool] [--intake] [--lit] [--private] [--intake-usd X]
               [--no-intake] [--no-auto-tool] [--no-lean-search] [--no-tool lean.lsp]
-  harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite]
+  harness doctor [--host HOST] [--model PROVIDER/ID] [--no-write | --rewrite] [--agents]
   harness ui [--port N] [--open | --no-open] [--runs DIR]
   harness help [COMMAND | all]   (the everyday commands; one command's usage and flags; this whole text)
   harness parameters [--markdown [--out FILE]]   (every parameter: the keys of the run configuration, the flags, the host profile keys; documentation/parameters.md)
@@ -130,7 +132,9 @@ whole budget, the formalization included; the budget gate, probe first and the c
 account, at half the allowance (--turn-usd). --defaults picks the set of defaults: v2 (the default) adds the edit tool, the masking of old
 check results, bounded checks, the intake gate, the compute tool and lean.search (when the host offers them) to v1, which is what solve did before the sets. RESULT.md and view.html are written beside the journal. doctor: checks Lean, the Kimina server,
 model credentials, prices, the network and the isolation of the certifier, says what is missing and what to do, and writes the host profile
-config/hosts/sandboxed.json when bubblewrap or Docker works (never over an existing file; --rewrite does, --no-write only checks).
+config/hosts/sandboxed.json when bubblewrap or Docker works (never over an existing file; --rewrite does, --no-write only checks). When
+config/library-builder.json selects coding-agent, or with --agents (every agent of the default tables too), it checks the coding agents:
+installed, their version, the flags of their non-interactive mode or the answer to ACP initialize; no prompt and no model call.
 report: prints the report of a run from its journal, and rewrites RESULT.md beside it (documentation/quickstart.md, "RESULT.md"), which a run
 rewrites itself after every certified result and at every stop: this is how a run whose process was killed gets its account. view: writes
 RUN_DIR/view.html (or --out FILE), one static page built from the journal alone: no script, no network, nothing written to the run.
@@ -332,6 +336,9 @@ async function main(): Promise<number> {
       case "contract":
         if (target === undefined) break;
         return await contract(registry, target);
+      case "certificates":
+        if (target === undefined) break;
+        return await certificatesCommand(registry, target, { ...(values.problem !== undefined ? { problems: values.problem } : {}), ...(values.out !== undefined ? { out: values.out } : {}), log: (l) => console.log(l) });
     }
     console.error(usage);
     return 2;
@@ -1363,6 +1370,7 @@ async function doctor(): Promise<number> {
       ...(values.model !== undefined ? { model: values.model } : {}),
       noWrite: values["no-write"] === true,
       rewrite: values.rewrite === true,
+      agents: values.agents === true,
     },
     { out: (line) => console.log(line), err: (line) => console.error(line), models: builtinModels() },
   );

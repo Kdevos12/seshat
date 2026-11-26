@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { seeded } from "@seshat/core";
 import type { Llm, ProblemContext } from "@seshat/lines";
 import { GRAPH_SEARCH_BOUNDS, type GraphSearchInput } from "@seshat/models";
-import { familySearch, localSearch, neighbor } from "../src/graph-search.ts";
+import { graphNeighbor } from "../src/evolve.ts";
+import { familySearch, localSearch } from "../src/graph-search.ts";
 
 /** Counterexample: exactly 6 vertices and 7 edges. The score is nearer the closer a graph is. */
 const PLANTED_SCORE = "(g) => (g.n === 6 && g.edges.length === 7 ? 1 : 0.9 / (1 + Math.abs(g.n - 6) + Math.abs(g.edges.length - 7)))";
@@ -43,7 +44,7 @@ describe("the local search over graphs", () => {
     const random = seeded(3);
     let g = { n: 3, edges: [[0, 1]] as Array<[number, number]> };
     for (let i = 0; i < 300; i++) {
-      g = neighbor(g, random, 2, 5);
+      g = graphNeighbor(g, random, 2, 5);
       assert.ok(g.n >= 2 && g.n <= 5);
       assert.ok(g.edges.every(([u, v]) => u < v && v < g.n));
     }

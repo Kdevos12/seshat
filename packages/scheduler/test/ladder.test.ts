@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_FRACTIONS, ladderDue, NO_PROGRESS, progressed, rungsOf } from "../src/index.ts";
+import type { Json } from "@seshat/core";
+import { claim, toyAnswer, world } from "../../graph/test/helpers.ts";
+import { DEFAULT_FRACTIONS, ladderDue, NO_PROGRESS, plannerRounds, progressed, progressOf, rungsOf, SKETCH_KIND, type SketchRecord } from "../src/index.ts";
 
 describe("the ladder", () => {
   const rungs = [{ lines: ["M13"] }, { lines: ["M14", "M5"] }];
@@ -33,5 +35,23 @@ describe("the ladder", () => {
     assert.match(progressed({ proved: 1, holes: 3 }, { proved: 1, holes: 2 }) ?? "", /from 3/);
     assert.equal(progressed({ proved: 1, holes: 2 }, { proved: 1, holes: 2 }), undefined);
     assert.equal(progressed({ proved: 2, holes: 2 }, { proved: 1, holes: 3 }), undefined, "going back is no progress");
+  });
+
+  it("reads the problem's own sketches, not a hole's local redraft (DP7), for the open holes and the planner's rounds", async () => {
+    const w = world(toyAnswer);
+    try {
+      const root = await claim(w, "(n : ℕ) : n + 0 = n");
+      const [a, b, c] = [await claim(w, "(n : ℕ) : 0 + n = n"), await claim(w, "(n : ℕ) : n * 1 = n"), await claim(w, "(n : ℕ) : 1 * n = n")];
+      const record = (holes: string[], extra: Partial<SketchRecord> = {}): void => {
+        const data: SketchRecord = { problemId: "prb_1", attemptId: "att_1", submission: w.memory.blobs.put("{}"), names: holes.map((_, k) => `aux_${k}`), healthy: true, registered: true, holes, ...extra };
+        w.memory.recordNode({ kind: SKETCH_KIND, claimId: root, data: data as unknown as Json });
+      };
+      record([a as string, b as string], { planner: true });
+      record([c as string], { attemptId: "aux_0@000000:draft", planner: true, redraftOf: a as string });
+      assert.deepEqual(progressOf(w.memory, "prb_1", root), { proved: 0, holes: 2 });
+      assert.equal(plannerRounds(w.memory, "prb_1", root), 1);
+    } finally {
+      w.close();
+    }
   });
 });

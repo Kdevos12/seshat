@@ -4,6 +4,7 @@
  */
 export * from "./battery.ts";
 export * from "./clients.ts";
+export * from "./encoders.ts";
 export * from "./fingerprint.ts";
 export * from "./graph-hunt.ts";
 export * from "./graph-lean.ts";
@@ -20,6 +21,7 @@ export * from "./objects.ts";
 export * from "./random.ts";
 export * from "./refutation.ts";
 export * from "./sage.ts";
+export * from "./sat.ts";
 export * from "./sandbox.ts";
 export * from "./services.ts";
 export * from "./statement.ts";

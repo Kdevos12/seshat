@@ -201,6 +201,7 @@ flowchart TB
   ledger["Task ledger<br/>one task per prover,<br/>typed routing of failures"]:::real
   m11["Line M11: small models<br/>counter-models,<br/>fingerprints, sequences"]:::wait
   graphhunt["Graph counterexamples (M11.graphs, off)<br/>model-written predicate, batteries to 8 vertices,<br/>local search, families, Lean templates<br/>lean/SeshatLib/Finite"]:::wait
+  satenc["SAT encoders (M11.sat, off)<br/>magmas and graphs, lex-leader CNF,<br/>python-sat; UNSAT is evidence only"]:::wait
   leanenv["Lean environment<br/>lean/env files, resolver,<br/>environment hash"]:::built
   libbuilder["LibraryBuilder (off by default)<br/>coding agent in a sandbox,<br/>files added to lean/SeshatLib"]:::wait
   libgate["Seshat's gate<br/>diff, fresh lake build, no sorry,<br/>certifier, test lemmas"]:::wait
@@ -215,7 +216,7 @@ flowchart TB
   m8["Line M8: inductive engine<br/>data tables, hypotheses as<br/>programs, conjecture pool"]:::wait
   m3["Line M3: lemma library<br/>promoted aux lemmas, BM25 search,<br/>library_search"]:::built
   m13["Line M13: theory exploration<br/>minimal laws, integer relations,<br/>candidates for the library"]:::wait
-  m16["Line M16: program search<br/>islands of scored programs,<br/>rung 2 of the ladder"]:::wait
+  m16["Line M16: program search<br/>islands of scored programs,<br/>local search between rounds,<br/>rung 2 of the ladder"]:::wait
   m4["Line M4: context compiler<br/>frozen prefix, tail, premises,<br/>expand, graph_query"]:::real
   m5["Line M5: lessons<br/>from accepted proofs and recurring<br/>failures, deactivated by effect"]:::built
   m14["Line M14: repairs<br/>typed critics, Lakatos repair<br/>of refuted conjectures"]:::wait
@@ -238,6 +239,7 @@ flowchart TB
   subgraph TOOLS["Capability registry"]
     leancheck["lean_check<br/>Kimina Lean Server"]:::real
     sage["compute_sage<br/>SageMath"]:::real
+    python["compute_python<br/>Python on Pyodide:<br/>sympy, SAT, SDP,<br/>the compute tool without Sage"]:::wait
     leanmeta["lean_meta<br/>Lean meta tool"]:::wait
     leangoals["lean_goals<br/>Pantograph"]:::wait
     leanlsp["lean_lsp<br/>Lean language server"]:::real
@@ -258,6 +260,7 @@ flowchart TB
 
   m10["Line M10: classical battery<br/>per subgoal, before any model:<br/>domain router, Beta posteriors"]:::real
   battery["Tactics in parallel<br/>decide, omega, norm_num, simp,<br/>linarith, grind, aesop, hammer..."]:::real
+  certs["Certificate stage (CX4), E6 goals:<br/>modular obstruction, cofactors,<br/>sums of squares, Bernstein boxes"]:::wait
   subgraph JUDGE["Judge: Lean"]
     fast["Fast check (REPL)<br/>errors, axioms,<br/>statement unchanged"]:::real
     certifier["Certifier (lean_certify)<br/>fresh process, kernel<br/>replay, axioms and<br/>statement compared"]:::real
@@ -327,6 +330,9 @@ flowchart TB
   m11 -->|"statements about graphs,<br/>option M11.graphs"| graphhunt
   graphhunt -->|"nauty graphs to 10 vertices"| sage
   graphhunt -->|"negation from the witness"| fast
+  m11 -->|"no counter-model in the battery,<br/>option M11.sat"| satenc
+  satenc -->|"CNF to python-sat"| python
+  satenc -->|"negation from the decoded<br/>magma or graph"| fast
   bench -->|"problems, when<br/>M8 is on"| m8
   llm -->|"hypotheses as programs,<br/>step DAGs, programs"| m8
   m8 -->|"columns and hypotheses<br/>run in"| sandbox
@@ -359,6 +365,7 @@ flowchart TB
   m14 -->|"repair suggestions<br/>for the next session"| provers
   llm <-->|"prompts, tool calls"| provers
   provers --> leancheck & sage
+  provers -.->|"--tool, or when Sage<br/>does not answer"| python
   provers -->|"sketches ending in<br/>named sorry holes"| m12
   m12 -->|"holes as claims,<br/>one prove task each"| holes
   holes -->|"link lemma, hole proofs"| leancheck
@@ -380,6 +387,9 @@ flowchart TB
   m10 -->|"cheapest tactics first,<br/>stop at the first success"| battery
   battery -->|"Lean files"| leancheck
   battery -->|"a success is submitted<br/>through validate"| fast
+  battery -->|"no tactic closed<br/>a goal tagged E6"| certs
+  certs -->|"Gröbner cofactors,<br/>an SDP by clarabel"| python
+  certs -->|"Lean text written from integers,<br/>rationals and the goal's names,<br/>submitted through validate"| fast
   m10 -->|"SMT-LIB, TPTP"| smtz3 & vampire & eprover
   smtz3 & vampire & eprover -->|"unsat is evidence,<br/>premises go to grind,<br/>aesop, hammer"| battery
   m10 -->|"tries, evidence,<br/>posteriors from the journal"| journal

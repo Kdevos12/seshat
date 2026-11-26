@@ -380,7 +380,10 @@ Other messages (1):
 ```
 
 The other answers say that the file was refused before Lean ran and why, that Lean ran out of
-time, or that Lean could not be reached.
+time, or that Lean could not be reached. A file whose only reason to be a sketch is scratch commands
+(`#check`, `example`: a hole session's checks let them through, [validator.md](validator.md)) is
+answered "Checked the file: no error and no hole, but it holds scratch commands (#check, example),
+which make it a sketch: remove them for the work to count."; with holes as well, the answer asks for both.
 
 ## Other tools
 

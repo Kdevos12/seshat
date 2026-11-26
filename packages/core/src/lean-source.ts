@@ -476,3 +476,15 @@ export function importsOf(source: string): string[] {
   }
   return imports;
 }
+
+/** Splits a signature at its first colon outside brackets: the binders, and the type after the colon. */
+export function splitStatement(statement: string): { binders: string; type: string } | undefined {
+  let depth = 0;
+  for (let i = 0; i < statement.length; i++) {
+    const c = statement[i] as string;
+    if ("([{⦃".includes(c)) depth++;
+    else if (")]}⦄".includes(c)) depth--;
+    else if (c === ":" && depth === 0 && statement[i + 1] !== "=") return { binders: statement.slice(0, i).trim(), type: statement.slice(i + 1).trim() };
+  }
+  return undefined;
+}

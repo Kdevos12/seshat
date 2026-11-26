@@ -59,9 +59,13 @@ export async function runContract(registry: Registry, capabilityId: string, opti
   };
 }
 
-/** One case, in a scope of its own when the capability is stateful, released afterwards. */
-async function runCase(registry: Registry, capabilityId: string, testCase: ContractCase, options: ContractOptions): Promise<CaseResult> {
+/**
+ * One case, in a scope of its own when the capability is stateful, released afterwards; a case with `settings` runs in a
+ * registry of its own, closed afterwards.
+ */
+async function runCase(host: Registry, capabilityId: string, testCase: ContractCase, options: ContractOptions): Promise<CaseResult> {
   const started = performance.now();
+  const registry = testCase.settings === undefined ? host : host.withSettings(capabilityId, testCase.settings);
   const scope = registry.capability(capabilityId).manifest.stateful === true ? newId("contract") : undefined;
   const invoke = (input: Json) =>
     registry.invoke(capabilityId, input, {
@@ -115,6 +119,7 @@ async function runCase(registry: Registry, capabilityId: string, testCase: Contr
     };
   } finally {
     if (scope !== undefined) await registry.release(scope);
+    if (registry !== host) await registry.close();
   }
 }
 

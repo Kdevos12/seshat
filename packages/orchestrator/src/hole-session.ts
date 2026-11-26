@@ -2,7 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, StringEnum } from "@earendil-works/pi-ai";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import { type BlobStore, HOLE_VERDICTS, type Journal, newId } from "@seshat/core";
+import { type BlobStore, HOLE_VERDICTS, type Journal, type LeanCheckStatus, newId } from "@seshat/core";
 import type { HoleSessionRequest, HoleSessionResult, HoleVerdictCall } from "@seshat/lines";
 import type { HostTactics } from "@seshat/classical";
 import type { LeanSearchPush } from "@seshat/lean-search";
@@ -60,6 +60,9 @@ export interface HoleSessionDeps {
   library?: (focus: { theorem: string; statement: string }) => Promise<OpenedSession>;
 }
 
+/** The statuses of a check that Lean answered (`LeanCheckStatus`): the only ones VL3's progress reads. */
+const LEAN_ANSWERS: readonly LeanCheckStatus[] = ["valid", "sorry", "lean_error"];
+
 /** The arguments of `hole_verdict`. */
 function verdictParameters() {
   return Type.Object({
@@ -78,12 +81,13 @@ function verdictParameters() {
  */
 export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionRequest): Promise<HoleSessionResult> {
   const real = await d.workbench(request.claimId);
-  const checks: { submission?: import("@seshat/core").Submission; report?: import("@seshat/core").ValidationReport; accepted: boolean; finished: boolean } = { accepted: false, finished: false };
-  // The workbench with checks that carry no attempt id (the journal knows no attempt of this session).
+  const checks: { submission?: import("@seshat/core").Submission; report?: import("@seshat/core").ValidationReport; accepted: boolean; finished: boolean; progress?: { first: number; last: number } } = { accepted: false, finished: false };
+  // The workbench with checks that carry no attempt id (the journal knows no attempt of this session), and that let the session look around
+  // with `#check` and `example` (`SCRATCH_POLICY`, owner 2026-11-24): a file that holds one is never valid, so it is never the hole's proof.
   const bench: Workbench = Object.assign(Object.create(real) as Workbench, {
     check: async (submission: Parameters<Workbench["check"]>[0], context: Parameters<Workbench["check"]>[1]) => {
       const { attemptId: _none, ...rest } = context;
-      return await real.check(submission, rest);
+      return await real.check(submission, { ...rest, scratch: true });
     },
   });
   let verdict: HoleVerdictCall | undefined;
@@ -158,6 +162,11 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
       afterCheck: async (check) => {
         checks.submission = check.submission;
         checks.report = check.report;
+        // Only a check that Lean answered measures the distance: a timeout, a server or REPL error has no messages, which is no distance 0.
+        if (check.report.leanStatus !== undefined && LEAN_ANSWERS.includes(check.report.leanStatus)) {
+          const distance = check.report.messages.filter((m) => m.severity === "error").length + check.report.sorries.length;
+          checks.progress = { first: checks.progress?.first ?? distance, last: distance };
+        }
         checks.accepted ||= check.accepted;
         checks.finished = check.accepted || request.done(check.submission, check.report);
         return checks.finished ? { line: "M12", reason: "the work on the lemma is done" } : undefined;
@@ -174,5 +183,6 @@ export async function runHoleSession(d: HoleSessionDeps, request: HoleSessionReq
     finished: checks.finished,
     accepted: checks.accepted,
     ...(verdict !== undefined ? { verdict } : {}),
+    ...(checks.progress !== undefined ? { progress: checks.progress } : {}),
   };
 }

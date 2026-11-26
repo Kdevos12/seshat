@@ -17,13 +17,15 @@ import {
   relate,
   verdictString,
 } from "./fingerprint.ts";
-import { describeGraphFindings, type GraphHuntServices, huntGraphs } from "./graph-hunt.ts";
+import { describeSatFindings, satGraphModel, satGraphTemplate, satMagma, type SatSettings } from "./encoders.ts";
+import { countedLlm, describeGraphFindings, GRAPH_HIT_KIND, GRAPH_HUNT, type GraphHitData, type GraphHuntServices, huntGraphs } from "./graph-hunt.ts";
 import { recognizeGraphStatement } from "./graph-statement.ts";
 import { type IdentificationData, recordIdentification } from "./identify.ts";
 import { evaluateWithLean } from "./lean-eval.ts";
 import type { BatteryObject, IntegerObject, MagmaObject } from "./objects.ts";
 import { type CounterModelData, describeCounterModel, recordCounterModel, submitRefutation } from "./refutation.ts";
 import { runProgram } from "./sandbox.ts";
+import type { SatCompute } from "./sat.ts";
 import { OEIS_MAX_TERMS, RegistryOeis } from "./services.ts";
 import { MAX_STATEMENT_LENGTH, type RecognizedStatement, recognizeStatement } from "./statement.ts";
 
@@ -63,6 +65,17 @@ export const M11_DEFAULTS = {
   lawWork: 500_000_000,
   /** Statements about simple graphs: batteries, a program of the model, a Lean recheck, a search beyond the lists (CA18 to CA20). Off by default; documentation/models.md, "Statements about graphs". */
   graphs: false,
+  /**
+   * SAT encoders for finite counterexamples (plan change CX6), off by default: magmas to `satMagmaOrder` elements when the battery found no
+   * counter-model, graphs to `satGraphOrder` vertices (with `graphs` on), solved by python-sat in the host's compute tool, each call within
+   * `satTimeoutSec`, a CNF of at most `satMaxClauses` clauses. documentation/models.md, "SAT encoders". `satGraphOrder` is by default
+   * the largest graph sent to Lean (`GRAPH_HUNT.leanVertices`): a larger model would be recorded `too_large` and refute nothing.
+   */
+  sat: false,
+  satMagmaOrder: 5,
+  satGraphOrder: GRAPH_HUNT.leanVertices,
+  satTimeoutSec: 60,
+  satMaxClauses: 300_000,
 } satisfies JsonObject;
 
 export type M11Options = { [K in keyof typeof M11_DEFAULTS]: (typeof M11_DEFAULTS)[K] extends boolean ? boolean : number };
@@ -99,7 +112,17 @@ export function readOptions(raw: Readonly<JsonObject>): M11Options {
     leanFiles: integer("leanFiles", 0, 10_000),
     lawWork: integer("lawWork", 0, 10_000_000_000),
     graphs: raw.graphs === undefined ? false : flag("graphs"),
+    // Options written before CX6 have none of these: the defaults.
+    sat: raw.sat === undefined ? false : flag("sat"),
+    satMagmaOrder: raw.satMagmaOrder === undefined ? M11_DEFAULTS.satMagmaOrder : integer("satMagmaOrder", 1, 8),
+    satGraphOrder: raw.satGraphOrder === undefined ? M11_DEFAULTS.satGraphOrder : integer("satGraphOrder", 1, 16),
+    satTimeoutSec: raw.satTimeoutSec === undefined ? M11_DEFAULTS.satTimeoutSec : integer("satTimeoutSec", 1, 3600),
+    satMaxClauses: raw.satMaxClauses === undefined ? M11_DEFAULTS.satMaxClauses : integer("satMaxClauses", 1, 5_000_000),
   };
+}
+
+function satSettings(options: M11Options): SatSettings {
+  return { magmaOrder: options.satMagmaOrder, graphOrder: options.satGraphOrder, timeoutSec: options.satTimeoutSec, maxClauses: options.satMaxClauses, refute: options.refute };
 }
 
 /** The objects a statement is tried on: magmas for a statement of magmas, the numbers from 0 for a statement about a number. */
@@ -247,6 +270,11 @@ export interface M11Services {
   graphSearch?: GraphHuntServices["search"];
   /** A stand-in for SageMath's graph generator, for a test. */
   sage?: GraphHuntServices["sage"];
+  /**
+   * The host's compute tool with python-sat, for the SAT encoders (CX6): `registryCompute` of `@seshat/classical`, which this package
+   * cannot import; the orchestrator gives it. Without it, the option `sat` records that nothing ran.
+   */
+  compute?: (problem: ProblemContext) => SatCompute | undefined;
 }
 
 async function beforeProvers(problem: ProblemContext, services: M11Services): Promise<void> {
@@ -256,7 +284,14 @@ async function beforeProvers(problem: ProblemContext, services: M11Services): Pr
     // The graphs are an option, off by default: with it off nothing here changes, and with it on a statement that is not about graphs is left alone as before, with nothing spent.
     const graph = options.graphs ? recognizeGraphStatement(problem.target.statement) : undefined;
     if (graph !== undefined && "statement" in graph) {
-      await huntGraphs(problem, graph.statement, { ...(services.graphSearch !== undefined ? { search: services.graphSearch } : {}), ...(services.sage !== undefined ? { sage: services.sage } : {}) });
+      const counted = countedLlm(problem.llm, GRAPH_HUNT.modelRequests);
+      const compute = options.sat ? services.compute?.(problem) : undefined;
+      // CX6: the template encoder first (no model call); a statement outside its fragment may get an encoder from the model after the lists and the search.
+      const template = options.sat ? await satGraphTemplate(problem, graph.statement, satSettings(options), compute) : undefined;
+      if (template === "refuted" || problem.signal.aborted) return;
+      await huntGraphs(problem, graph.statement, { counted, ...(services.graphSearch !== undefined ? { search: services.graphSearch } : {}), ...(services.sage !== undefined ? { sage: services.sage } : {}) });
+      const refuted = problem.memory.nodes(GRAPH_HIT_KIND, { claimId: problem.claimId }).some((n) => (n.data as unknown as GraphHitData).confirmation === "confirmed");
+      if (template === "outside" && !refuted && !problem.signal.aborted) await satGraphModel(problem, graph.statement, satSettings(options), compute, counted);
       return;
     }
     problem.log(`M11: the statement is left alone: ${recognized.reason}`);
@@ -280,6 +315,11 @@ async function beforeProvers(problem: ProblemContext, services: M11Services): Pr
 
   await refute(problem, options, battery, statement, tried);
   if (problem.signal.aborted) return;
+  // CX6: a statement of magmas the battery did not refute is given to the SAT encoder, at orders the battery samples or does not reach.
+  if (options.sat && statement.kind === "magma" && !tried.verdicts.includes(false)) {
+    await satMagma(problem, statement, satSettings(options), services.compute?.(problem));
+    if (problem.signal.aborted) return;
+  }
   await compareNeighbors(problem, options, env, battery, statement, tried);
   if (problem.signal.aborted) return;
   if (statement.kind === "nat" && options.identify) await identify(problem, options, battery, tried, services);
@@ -585,7 +625,9 @@ export function createM11(services: M11Services = {}): Line {
     hooks: {
       beforeProvers: (problem) => beforeProvers(problem, services),
       briefing: async (session): Promise<Briefing | undefined> => {
-        const text = describeFindings(session.memory, session.claimId) ?? describeGraphFindings(session.memory, session.claimId);
+        const found = describeFindings(session.memory, session.claimId) ?? describeGraphFindings(session.memory, session.claimId);
+        const sat = describeSatFindings(session, session.claimId);
+        const text = found === undefined && sat === undefined ? undefined : [found, sat].filter((t) => t !== undefined).join("\n");
         return text === undefined ? undefined : { title: "Small models (line M11)", text };
       },
       // A proof of the negation that passed the fast check: the claim is false as stated, and the provers would only spend the budget.

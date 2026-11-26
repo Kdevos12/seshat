@@ -36,7 +36,7 @@ import type { LeanSearchPush } from "@seshat/lean-search";
 import { type Draw, type DrawItem, type DrawOptions, type MemoryStore, type ModelRanking, recordAcceptedLemmas } from "@seshat/memory";
 import { messageOf, type Registry, RegistryLeanChecker } from "@seshat/registry";
 import { isInterrupted } from "@seshat/lines";
-import { asRecord, ladderDue, NO_PROGRESS, SKETCH_KIND, type SketchRecord, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
+import { ladderDue, NO_PROGRESS, plannerRounds, progressed, type Progress, progressOf, type Rung, rungsOf, routingInfo, type TaskLedger, taskInfo, DEFAULT_FRACTIONS } from "@seshat/scheduler";
 import type { BudgetGate } from "./budget-gate.ts";
 import type { Ledger } from "./budget.ts";
 import { problemDecide } from "./decide.ts";
@@ -329,6 +329,8 @@ export class ProblemLines {
       ...(o.roles !== undefined ? { roleFor: (site: string) => this.roleFor(site) } : {}),
     });
     const hole = o.roles?.has("hole") === true ? o.roles.use("hole") : undefined;
+    // The file a sketch of M12 is checked on: the problem's, or a claim's own small file (a hole's local redraft, DP7).
+    const benchOf = async (claimId: string | undefined): Promise<Workbench> => (claimId === undefined || claimId === this.p.claimId ? this.p.workbench : await o.benches.workbenchFor(claimId, false, own));
     const context: ProblemContext = {
       line: id,
       runId: o.runId,
@@ -399,25 +401,29 @@ export class ProblemLines {
               if (ran.skipped) throw new Error(`hole session ${request.key} was skipped, which its spec does not allow`);
               return ran.value;
             },
-            // A sketch checked on the problem's own file, as a prover's check is, with no attempt: a refinement round's blueprint (CA12).
-            checkSketch: async (submission: Submission) => (await this.p.workbench.check(submission, { actor, signal: own, problemId: this.p.problemId })).report,
+            // A sketch checked on the problem's own file, as a prover's check is, with no attempt: a refinement round's blueprint (CA12). With a claim: on that
+            // claim's own small file, the workbench of its hole sessions (a hole's local redraft, DP7).
+            checkSketch: async (submission: Submission, options?: { claimId?: string }) =>
+              (await (await benchOf(options?.claimId)).check(submission, { actor, signal: own, problemId: this.p.problemId })).report,
             ...(o.sorryBattery !== undefined
               ? {
-                  closeSorries: async (submission: Submission, report: ValidationReport) =>
-                    (
+                  closeSorries: async (submission: Submission, report: ValidationReport, options?: { claimId?: string }) => {
+                    const bench = await benchOf(options?.claimId);
+                    return (
                       await closeSorries(
                         {
                           checker: new RegistryLeanChecker(o.registry, { actor: SORRY_BATTERY_ACTOR }),
-                          render: (x) => this.p.workbench.render(x),
+                          render: (x) => bench.render(x),
                           host: o.sorryBattery!.host,
                           config: o.sorryBattery!.config,
-                          record: recordSorryBattery(o.journal, this.p.claimId, undefined, SORRY_BATTERY_ACTOR),
+                          record: recordSorryBattery(o.journal, options?.claimId ?? this.p.claimId, undefined, SORRY_BATTERY_ACTOR),
                         },
                         submission,
                         report,
                         own,
                       )
-                    )?.submission,
+                    )?.submission;
+                  },
                 }
               : {}),
             lock: (lemmas: string, options?: { recorded?: boolean }) => this.p.workbench.lock(lemmas, { actor, signal: own, ...(options?.recorded === true ? { recorded: true } : {}) }),
@@ -459,10 +465,7 @@ export class ProblemLines {
     const roles = this.run.o.roles;
     if (roles === undefined || roleOfSite(site) !== "planner" || !roles.has("planner")) return undefined;
     this.escalation ??= new PlannerEscalation(roles, {
-      rounds: () => this.run.o.memory.nodes(SKETCH_KIND, { claimId: this.p.claimId }).filter((node) => {
-        const record = asRecord<SketchRecord>(node.data);
-        return record.problemId === this.p.problemId && record.planner === true;
-      }).length,
+      rounds: () => plannerRounds(this.run.o.memory, this.p.problemId, this.p.claimId),
       progress: () => progressOf(this.run.o.memory, this.p.problemId, this.p.claimId),
       allowanceUsd: () => this.p.ledger.limitUsd,
       spentOn: (model) =>

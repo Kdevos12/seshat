@@ -22,7 +22,8 @@ exploring), and the problems the budget gate stopped after their probe (no Lean 
 - **Budget gate**: every answer for the problem, with its site, action, who decided and its words.
 - **Last Lean errors**: the reasons of the last three invalid validations of the problem's claims (the hole claims of its sketch included), the first 300
   characters of each.
-- **Last sketch or blueprint**: the first 1500 characters of the newest `m12_sketch` record's text, and M12's records: whether it was healthy, the
+- **Last sketch or blueprint**: the first 1500 characters of the newest `m12_sketch` record's text (of the problem's own sketches: a hole's local
+  redraft, DP7, a record with `redraftOf`, is left out here and in the length section), and M12's records: whether it was healthy, the
   problem that kept it from being split, the holes dropped, the planner's refinement rounds, the repairs, the hole verdicts of the inner sessions and
   why the refinement stopped.
 - **Informal proof**: the `informal_proof` node: accepted or not, its verifier verdicts and its models.
@@ -96,7 +97,16 @@ Where the split comes from:
 
 The table is markdown only; `length.json` holds per-problem records and this is per role.
 
+## Exploration moves
+
+One table in `audit.md` for the run (plan change CX1), after "Output tokens by role and kind"; an ablation directory has one per arm. It counts, for each
+of the twelve exploration moves E1 to E12, the problems whose own statement the router tags with it, and the certified ones among them
+([classical.md](classical.md#exploration-moves-plan-change-cx1)). A problem's moves are the ones its last `battery_run` node on its own claim journaled
+(M10 ran on it), else the moves computed now from the statement of its claim (`claim.created`), so an older run, or one without M10, is counted too; the
+line above the table says how many came from each. A problem has several moves or none, so the column does not sum to the problems. These counts order
+the CPU tools of Tasks 78 to 80 (`plans/plan-change-cpu-exploration.md`, "Order and cost").
+
 ## Tests
 
 `packages/orchestrator/test/audit.test.ts`: a scripted run with a certified and an uncertified problem; an ablation directory with two arms; a reference
-directory; the output-kinds table (`output-kinds.test.ts`: a transcript split by characters, an estimated message, a planner call's unstored thinking, a hole session with and without a transcript) and the hole session's transcript (`hole-session.test.ts`); the length table (a certified proof of known length, an uncertified file with `aux_` lemmas, holes and a timed check, a `.lean` and a `.md` reference, the buckets, `length.json`). Not run against a real run.
+directory; the exploration moves (a journaled and a computed problem, the table); the output-kinds table (`output-kinds.test.ts`: a transcript split by characters, an estimated message, a planner call's unstored thinking, a hole session with and without a transcript) and the hole session's transcript (`hole-session.test.ts`); the length table (a certified proof of known length, an uncertified file with `aux_` lemmas, holes and a timed check, a `.lean` and a `.md` reference, the buckets, `length.json`). Not run against a real run.

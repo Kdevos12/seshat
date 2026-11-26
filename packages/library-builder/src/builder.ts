@@ -1,3 +1,4 @@
+import type { AcpRecord } from "./acp.ts";
 import type { GateCheck, GateFile, NewDefinition } from "./gate.ts";
 import type { BuildBudget, LibraryJob, LibrarySpec } from "./spec.ts";
 
@@ -17,6 +18,8 @@ export interface BuildProvenance {
   /** The builder's id: `none` or `coding-agent`. */
   builder: string;
   agent?: string;
+  /** `acp` when the agent ran over the Agent Client Protocol; absent for the CLI transport (plan change EA2). */
+  transport?: "acp";
   model?: string;
   /** The argv that ran, with the sandbox in front. */
   command?: string[];
@@ -32,6 +35,8 @@ export interface BuildProvenance {
   /** The end of what the agent printed. */
   agentOutput?: string;
   agentMs?: number;
+  /** Over ACP: the session, every permission answer, the requests refused, the usage the agent reported, why it was cancelled. */
+  acp?: AcpRecord;
   startedAt: string;
   finishedAt: string;
 }

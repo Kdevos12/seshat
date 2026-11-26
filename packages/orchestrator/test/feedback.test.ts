@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { prepareSketch, renderSketch, type ValidationReport } from "@seshat/core";
+import { prepareSketch, renderSketch, SCRATCH_REASON, type ValidationReport } from "@seshat/core";
 import { failureClass, formatCheck, locate, summarizeCheck } from "../src/index.ts";
 import { DEMO_FILE } from "./m0-helpers.ts";
 
@@ -30,6 +30,17 @@ describe("locate", () => {
 });
 
 describe("formatCheck", () => {
+  it("says that scratch commands must be removed, for a file whose only reason to be a sketch is them (owner, 2026-11-24)", () => {
+    const info = { severity: "info" as const, pos: { line: lineOf("theorem aux_a : True := trivial"), column: 0 }, text: "Nat.succ : ℕ → ℕ" };
+    const text = formatCheck(report({ holes: true, leanStatus: "valid", reasons: [SCRATCH_REASON], messages: [info] }));
+    assert.match(text, /^Checked the file: no error and no hole, but it holds scratch commands \(#check, example\), which make it a sketch: remove them for the work to count\./);
+    assert.doesNotMatch(text, /prove each hole/);
+    assert.equal(text.split(SCRATCH_REASON).length, 1, "said once, in the first line");
+    // With holes as well, both are said.
+    const both = formatCheck(report({ holes: true, leanStatus: "sorry", reasons: [SCRATCH_REASON, "lean: 1 sorry(s) left"], sorries: [{ pos: { line: lineOf("sorry"), column: 2 }, goal: "⊢ True" }] }));
+    assert.match(both, /1 hole\(s\) left\. A file with holes is never accepted; prove each hole, and remove the scratch commands \(#check, example\) for the work to count\./);
+  });
+
   it("says why a file was refused before Lean", () => {
     const text = formatCheck(report({ leanStatus: undefined, reasons: ["proof: 'native_decide' is not allowed"] }));
     assert.equal(text, "Refused before Lean ran; nothing was checked:\n- proof: 'native_decide' is not allowed");

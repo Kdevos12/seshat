@@ -3,7 +3,7 @@ import { type Briefing, isInterrupted, type JsonObject, type Line, type ProblemC
 import type { MemoryStore } from "@seshat/memory";
 import { sageThroughRegistry } from "@seshat/models";
 import { admitCounterexample, cegisCounter, describeCounterexamples, readCounterexamples, recordDrop } from "./cegis.ts";
-import { fillTemplate, makeScorer, runSearch, type Scored, type SearchOptions, type SearchSpec } from "./evolve.ts";
+import { fillTemplate, type LocalOptions, type LocalPhaseRecord, makeLocalPhase, makeScorer, runSearch, type Scored, type SearchOptions, type SearchSpec } from "./evolve.ts";
 import { optionReader } from "./options.ts";
 import { runValues } from "./sandbox.ts";
 
@@ -13,6 +13,8 @@ const ACTOR = "line:M16";
 export const SEARCH_SPEC_KIND = "search_spec";
 export const SEARCH_PROGRAM_KIND = "search_program";
 export const SEARCH_RESULT_KIND = "search_result";
+/** A phase of local search between model rounds (plan change CX5): its seed and steps, which a resumed process replays. */
+export const SEARCH_LOCAL_KIND = "search_local";
 
 export const M16_OPTIONS: JsonObject = {
   /** Islands, rounds, programs per round, programs shown in a prompt (the defaults are small, for our budget). */
@@ -34,11 +36,26 @@ export const M16_OPTIONS: JsonObject = {
   memoryMb: 128,
   /** Submit the witness through `validate` when the target score is reached (or the task has no target). */
   submit: true,
+  /** `islands` (the database with resets), or `iid`: every call gets the seeds' prompt, one island, no resets, the same calls (plan change CX2). */
+  strategy: "islands",
+  /**
+   * The local search between model rounds, for a spec that names a `neighborhood` (plan change CX5; a spec without one runs no local search and
+   * these do nothing): `anneal` or `tabu`, the steps and moves of a phase, the steps without a better witness after which a model round runs,
+   * annealing's first temperature (score units), the tabu list's length, and a phase's wall time.
+   */
+  localMethod: "anneal",
+  localSteps: 200,
+  localNeighbors: 8,
+  plateauSteps: 20,
+  localTemperature: 1,
+  tabuTenure: 20,
+  localMs: 10_000,
 };
 
 interface Settings extends SearchOptions {
   recordPrograms: number;
   submit: boolean;
+  local: LocalOptions;
 }
 
 export function readM16Options(raw: Readonly<JsonObject>): Settings {
@@ -56,9 +73,37 @@ export function readM16Options(raw: Readonly<JsonObject>): Settings {
     // Not in `M16_OPTIONS`: only a campaign's `construct` mode sets them (documentation/campaign.md, "Plateau modes").
     ...(typeof raw.novelty === "number" && raw.novelty > 0 ? { novelty: Math.min(1, raw.novelty) } : {}),
     ...(raw.parentSplit === true ? { parentSplit: true } : {}),
+    ...(strategyOf(raw) === "iid" ? { strategy: "iid" as const } : {}),
     limits: { callMs: o.integer("callMs", 10, 60_000), totalMs: o.integer("totalMs", 1000, 300_000), memoryMb: o.integer("memoryMb", 32, 1024) },
     submit: o.flag("submit"),
+    local: localOf(raw),
   };
+}
+
+/** CX5's options; an absent one (options written before CX5) takes its default. */
+function localOf(options: Readonly<JsonObject>): LocalOptions {
+  const raw: Readonly<JsonObject> = { ...M16_OPTIONS, ...options };
+  const o = optionReader("M16", raw);
+  const method = raw.localMethod;
+  if (method !== "anneal" && method !== "tabu") throw new RangeError(`option M16.localMethod is "anneal" or "tabu", not ${JSON.stringify(method)}`);
+  const temperature = raw.localTemperature;
+  if (typeof temperature !== "number" || !Number.isFinite(temperature) || temperature < 0) throw new RangeError(`option M16.localTemperature is a number from 0, not ${JSON.stringify(temperature)}`);
+  return {
+    method,
+    steps: o.integer("localSteps", 1, 100_000),
+    neighbors: o.integer("localNeighbors", 1, 200),
+    plateauSteps: o.integer("plateauSteps", 1, 10_000),
+    temperature,
+    tabuTenure: o.integer("tabuTenure", 0, 10_000),
+    ms: o.integer("localMs", 100, 600_000),
+  };
+}
+
+/** The search strategy (plan change CX2): absent is `islands`, so options written before the option keep their meaning. */
+function strategyOf(raw: Readonly<JsonObject>): "islands" | "iid" {
+  const value = raw.strategy ?? "islands";
+  if (value !== "islands" && value !== "iid") throw new RangeError(`option M16.strategy is "islands" or "iid", not ${JSON.stringify(value)}`);
+  return value;
 }
 
 /** Declares the scoring program of a claim: the task that carries it is of kind `search`. Returns the node's id; once per spec. */
@@ -77,10 +122,38 @@ function isSpec(value: unknown): value is SearchSpec {
 interface Done {
   claimId: string;
   best?: { code: string; score: number };
+  /** The witness the local search improved past the best program's (CX5): its score, as a program's, and the phase that found it. */
+  local?: { score: number; phase: number };
   reached: boolean;
   witness?: Json;
   verdict?: string;
   note: string;
+}
+
+/** The best score a search reached: the local search's witness when it went past the best program (CX5). */
+function scoreOf(done: Done): number | undefined {
+  return done.local?.score ?? done.best?.score;
+}
+
+/**
+ * The local search of a spec that names a neighborhood (CX5): its seed is a function of the run's seed, the problem and the spec, apart from
+ * the program search's source, which it leaves as it was. Each phase is a `search_local` node (seed, steps, scores); a resumed process finds the node of a
+ * phase and replays it with its step count, not the wall time, so it goes through the same steps.
+ */
+function localPhase(memory: MemoryStore, claimId: string, key: string, spec: SearchSpec, s: Settings, seed: number) {
+  const recorded = new Map<number, LocalPhaseRecord>();
+  for (const n of memory.nodes(SEARCH_LOCAL_KIND, { claimId })) {
+    const data = n.data as unknown as { key?: string; record?: LocalPhaseRecord };
+    if (data.key === key && data.record !== undefined) recorded.set(data.record.phase, data.record);
+  }
+  return makeLocalPhase(spec, s.local, { ...s.limits, seed: hash32(key) }, seed, {
+    replay: (phase) => recorded.get(phase)?.steps,
+    record: (record) => {
+      if (recorded.has(record.phase)) return;
+      recorded.set(record.phase, record);
+      memory.recordNode({ kind: SEARCH_LOCAL_KIND, claimId, data: { key, record } as unknown as Json });
+    },
+  });
 }
 
 /**
@@ -124,6 +197,7 @@ export function createM16(): Line {
           }
         : {}),
       shouldStop: () => problem.budget.exhausted,
+      ...(spec.neighborhood !== undefined ? { local: localPhase(memory, claimId, specNode.key, spec, s, hash32(`${problem.seed ?? problem.runId}/${problem.problemId}/M16/${specNode.key}/local`)) } : {}),
       events: {
         program: (e) => {
           if (!e.evaluation.ok || recorded.has(e.code) || written >= s.recordPrograms) return;
@@ -138,11 +212,19 @@ export function createM16(): Line {
     const best: Scored | undefined = result.best;
     if (best !== undefined) {
       out.best = { code: best.code, score: best.score };
+      // PD5 for the local search too: an object Lean already refuted for this claim is not its witness, and the best program's output is.
+      const refutedBy = result.local !== undefined ? set.find((c) => JSON.stringify(c.object) === JSON.stringify(result.local?.object)) : undefined;
+      if (refutedBy !== undefined) {
+        recordDrop(memory, claimId, { line: ACTOR, candidate: hashJson({ key: specNode.key, local: result.local?.object } as unknown as Json).slice(0, 16), by: refutedBy, tokensSaved: 0 });
+        out.reached = spec.target !== undefined && best.score >= spec.target;
+      }
+      const local = refutedBy === undefined ? result.local : undefined;
+      if (local !== undefined) out.local = { score: local.score, phase: local.phase };
       const input = spec.witnessInput ?? (spec.inputs[spec.inputs.length - 1] as Json);
-      const built = await runValues(best.code, [input], { ...s.limits, seed: hash32(specNode.key) }, problem.signal);
-      const witness = built.values[0];
+      // The witness is the local search's object when it scored more than the best program's (CX5), else the best program's output.
+      const witness = local !== undefined ? local.object : (await runValues(best.code, [input], { ...s.limits, seed: hash32(specNode.key) }, problem.signal)).values[0];
       if (witness !== undefined) out.witness = witness;
-      if (s.submit && witness !== undefined && (spec.target === undefined || result.reached)) {
+      if (s.submit && witness !== undefined && (spec.target === undefined || out.reached)) {
         out.verdict = await submit(problem, memory, claimId, spec, witness, out);
         // A witness Lean rejected is a counterexample a checker produced: the next search for this claim meets it.
         if (out.verdict.startsWith("invalid")) admitCounterexample(memory, claimId, { object: witness, id: JSON.stringify(witness).slice(0, 80), source: "lean_decide", refutes: `the witness of "${spec.description.slice(0, 60)}"` });
@@ -151,7 +233,7 @@ export function createM16(): Line {
     memory.recordNode({ kind: SEARCH_RESULT_KIND, claimId, data: { key: specNode.key, done: out } as unknown as Json });
     const counter = cegisCounter(memory, claimId);
     if (counter.dropped > 0) out.note += `; ${counter.dropped} program(s) dropped by the counterexample set`;
-    problem.log(`M16: ${out.note}${out.best !== undefined ? `; best score ${out.best.score}` : "; no valid program"}${out.verdict !== undefined ? `; Lean: ${out.verdict}` : ""}`);
+    problem.log(`M16: ${out.note}${out.best !== undefined ? `; best score ${scoreOf(out)}` : "; no valid program"}${out.verdict !== undefined ? `; Lean: ${out.verdict}` : ""}`);
     return out;
   }
 
@@ -221,7 +303,7 @@ export function createM16(): Line {
     if (failure !== undefined) return { ended: "failed", reason: `the search failed: ${failure}` };
     if (ran === 0) return { ended: "failed", reason: "the claim carries no search specification" };
     const last = results.at(-1);
-    return { ended: "done", reason: last?.best !== undefined ? `best score ${last.best.score}${last.reached ? ", target reached" : ""}${last.verdict !== undefined ? `; Lean: ${last.verdict}` : ""}` : "no valid program" };
+    return { ended: "done", reason: last?.best !== undefined ? `best score ${scoreOf(last)}${last.reached ? ", target reached" : ""}${last.verdict !== undefined ? `; Lean: ${last.verdict}` : ""}` : "no valid program" };
   }
 
   /** What the searches of this problem found, read from the memory (so a resumed process has it too). */
@@ -250,7 +332,7 @@ export function createM16(): Line {
         const lines = results.flatMap((r) =>
           r.best === undefined
             ? []
-            : [`A program search built a candidate of score ${r.best.score}${r.reached ? " (the target was reached)" : ""}${r.witness !== undefined ? `: ${JSON.stringify(r.witness).slice(0, 300)}` : ""}. ${r.verdict !== undefined ? `Lean said: ${r.verdict}.` : "It was not checked by Lean."} A score proves nothing.`],
+            : [`A program search built a candidate of score ${scoreOf(r)}${r.reached ? " (the target was reached)" : ""}${r.witness !== undefined ? `: ${JSON.stringify(r.witness).slice(0, 300)}` : ""}. ${r.verdict !== undefined ? `Lean said: ${r.verdict}.` : "It was not checked by Lean."} A score proves nothing.`],
         );
         return lines.length === 0 ? undefined : { title: "What a program search found", text: lines.join("\n") };
       },

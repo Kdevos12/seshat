@@ -3,6 +3,7 @@ import {
   AUX_END,
   PROOF_BEGIN,
   PROOF_END,
+  SCRATCH_REASON,
   STANDARD_AXIOMS,
   type LeanMessage,
   type ValidationReport,
@@ -69,8 +70,9 @@ export function formatCheck(report: ValidationReport, limits: FeedbackLimits = D
   const where = (line: number) => locate(report.checked, line);
   const errors = report.messages.filter((m) => m.severity === "error");
   const others = report.messages.filter((m) => m.severity !== "error" && m.severity !== "trace" && !isSorryWarning(m));
-  // A file with holes depends on sorryAx; saying so again is noise.
-  const otherReasons = report.reasons.filter((r) => !COVERED_REASON.test(r) && !(report.holes && / depends on sorryAx$/.test(r)));
+  // A file with holes depends on sorryAx; saying so again is noise. Scratch commands are said in the first line when Lean found no error.
+  const scratch = report.reasons.includes(SCRATCH_REASON);
+  const otherReasons = report.reasons.filter((r) => !COVERED_REASON.test(r) && !(report.holes && / depends on sorryAx$/.test(r)) && !(r === SCRATCH_REASON && errors.length === 0));
   const out: string[] = [];
 
   if (report.verdict === "valid") {
@@ -90,9 +92,11 @@ export function formatCheck(report: ValidationReport, limits: FeedbackLimits = D
   } else if (report.holes) {
     const holes = report.sorries.length;
     out.push(
-      errors.length === 0
-        ? `Checked the sketch: no error, ${holes} hole(s) left. A file with holes is never accepted; prove each hole.`
-        : `Checked the sketch: ${errors.length} error(s), ${holes} hole(s).`,
+      errors.length > 0
+        ? `Checked the sketch: ${errors.length} error(s), ${holes} hole(s).`
+        : holes === 0 && scratch
+          ? "Checked the file: no error and no hole, but it holds scratch commands (#check, example), which make it a sketch: remove them for the work to count."
+          : `Checked the sketch: no error, ${holes} hole(s) left. A file with holes is never accepted; prove each hole${scratch ? ", and remove the scratch commands (#check, example) for the work to count" : ""}.`,
     );
   } else if (errors.length > 0) {
     out.push(`Not accepted: ${errors.length} error(s).`);

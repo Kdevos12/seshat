@@ -1,0 +1,148 @@
+{
+  "id": "compute.python",
+  "version": 1,
+  "title": "Compute with Python",
+  "description": {
+    "$file": "description.md"
+  },
+  "when": [
+    "testing a statement on small cases before trying to prove it, and searching for a counterexample or a witness",
+    "exact and symbolic computation: integers, rationals, polynomials, Gröbner bases, sums, limits (sympy)",
+    "searching a finite space: a SAT model (python-sat), an integer program (highspy), a graph with a property (networkx)",
+    "numerical certificates: a semidefinite program (clarabel), a high-precision constant (mpmath), whose result a Lean proof then checks"
+  ],
+  "whenNot": [
+    "proving the theorem: a computation is evidence, not a proof; only lean_check decides",
+    "searches that run for minutes: a call stops after 60 seconds unless you give it a timeout, at most 300, and when it stops the session's variables are lost",
+    "the network, files outside the working directory, installing packages, or plots"
+  ],
+  "exposure": "direct",
+  "stateful": true,
+  "input": {
+    "type": "object",
+    "required": [
+      "code"
+    ],
+    "properties": {
+      "code": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 20000,
+        "description": "Python code, run in this session. The value of the last line comes back, with what the code printed"
+      },
+      "timeout": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 300,
+        "description": "Seconds this call may run, 60 when not given"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "result_type",
+      "stdout",
+      "elapsed_ms"
+    ],
+    "properties": {
+      "result_type": {
+        "enum": [
+          "expression",
+          "statement"
+        ],
+        "description": "expression when the code ends with an expression, whose value is result"
+      },
+      "result": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "The value of the last expression, as Python's repr prints it"
+      },
+      "stdout": {
+        "type": "string",
+        "description": "What the code printed"
+      },
+      "elapsed_ms": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  },
+  "produces": [
+    "computed"
+  ],
+  "timeoutMs": 75000,
+  "timeoutField": "timeout",
+  "summary": [
+    "result_type",
+    "elapsed_ms"
+  ],
+  "examples": [
+    {
+      "title": "a conjecture tested on small cases",
+      "input": {
+        "code": "from sympy import isprime\n[n for n in range(100) if not isprime(n*n + n + 41)]"
+      },
+      "output": {
+        "result_type": "expression",
+        "result": "[40, 41, 44, 49, 56, 65, 76, 81, 82, 84, 87, 89, 91, 96]",
+        "stdout": "",
+        "elapsed_ms": 4.1
+      }
+    },
+    {
+      "title": "a Gröbner basis",
+      "input": {
+        "code": "from sympy import groebner, symbols\nx, y = symbols('x y')\n[str(p) for p in groebner([x**2 + y**2 - 1, x - y], x, y, order='lex').exprs]"
+      },
+      "output": {
+        "result_type": "expression",
+        "result": "['x - y', 'y**2 - 1/2']",
+        "stdout": "",
+        "elapsed_ms": 30.2
+      }
+    },
+    {
+      "title": "an object built once, then explored",
+      "input": {
+        "code": "import networkx as nx\npetersen = nx.petersen_graph()\nprint(nx.girth(petersen))\nlen(list(nx.find_cliques(petersen)))"
+      },
+      "output": {
+        "result_type": "expression",
+        "result": "15",
+        "stdout": "5\n",
+        "elapsed_ms": 2.5
+      },
+      "note": "petersen stays defined for the next calls of this session, and only this session."
+    }
+  ],
+  "implementations": [
+    {
+      "id": "pyodide",
+      "version": "314.0.7+child-1",
+      "kind": "inproc",
+      "factory": "pyodide",
+      "description": "Pyodide 314.0.7 from a local copy (the setting pyodideDir), one Node process per session started with --permission (reads only Pyodide's directory and its own scratch directory, writes only the scratch directory), an empty environment, no JavaScript module for Python, no network, a WebAssembly memory cap and a time limit that ends the process.",
+      "environment": {
+        "pyodide": "314.0.7",
+        "python": "3.14.2",
+        "numpy": "2.4.6",
+        "scipy": "1.18.0",
+        "sympy": "1.14.0",
+        "networkx": "3.6.1",
+        "mpmath": "1.4.1",
+        "python-sat": "1.8.dev26",
+        "highspy": "1.13.1",
+        "clarabel": "0.11.1",
+        "gmpy2": "2.3.0"
+      },
+      "settings": {
+        "pyodideDir": ""
+      }
+    }
+  ]
+}

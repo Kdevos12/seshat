@@ -16,7 +16,8 @@ const sha = (text: string): string => `sha256:${createHash("sha256").update(text
 /**
  * Writes a build into the journal (plan change LC4, gate rule 5): one `library_build` node with the agent, model, budget,
  * the prompt and the diff (as blobs, by hash), the commands, the agent's environment keys, every gate check and the
- * verdict, and, for an accepted build, one `lean_definition` node per new definition, `unreviewed` (LC5). Called by the
+ * verdict, over ACP the transport and what the session recorded (every permission answer, the reported usage), and, for an
+ * accepted build, one `lean_definition` node per new definition, `unreviewed` (LC5). Called by the
  * orchestrator's store, not by a line: `recordDefinition` refuses a view. A build never changes a claim's status.
  */
 export function recordBuild(memory: MemoryStore, result: LibraryBuildResult, options: { envHash?: string | null } = {}): { node: MemoryNode; definitions: string[] } {
@@ -53,6 +54,8 @@ export function recordBuild(memory: MemoryStore, result: LibraryBuildResult, opt
     ...(diff !== undefined ? { diffBlob: diff } : {}),
     ...(p.agentOutput !== undefined ? { agentOutputTail: p.agentOutput.slice(-2000) } : {}),
     ...(p.agentMs !== undefined ? { agentMs: p.agentMs } : {}),
+    ...(p.transport !== undefined ? { transport: p.transport } : {}),
+    ...(p.acp !== undefined ? { acp: p.acp as unknown as Json } : {}),
     startedAt: p.startedAt,
     finishedAt: p.finishedAt,
     spec: result.spec as unknown as Json,

@@ -2,6 +2,8 @@
  * @seshat/library-builder: the optional LibraryBuilder (plan change LC4) and Seshat's gate for what a coding agent writes.
  * Documented in documentation/library-builder.md.
  */
+export * from "./acp.ts";
+export * from "./acp-protocol.ts";
 export * from "./agent.ts";
 export * from "./builder.ts";
 export * from "./coding-agent.ts";

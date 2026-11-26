@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { AUX_BEGIN, AUX_END, BlobStore, type HarnessEvent, PROOF_BEGIN, PROOF_END, sha256Hex } from "@seshat/core";
-import { audit, auditCommand } from "../src/audit.ts";
+import { audit, auditCommand, renderAudit } from "../src/audit.ts";
 import { lengthBuckets, referenceLength } from "../src/length.ts";
 import { scriptedRun, type ScriptedSpec } from "./ablate-helpers.ts";
 import { tempDir } from "./m0-helpers.ts";
@@ -20,6 +20,8 @@ function spec(): ScriptedSpec {
     nodes: [
       { kind: "m12_sketch", claimId: "hard", data: { problemId: "hard", attemptId: "a", submission: sha256Hex(SKETCH), names: ["aux_one"], healthy: false, problem: "a hole states the target", dropped: ["aux_two"], planner: true, registered: false, holes: [] } },
       { kind: "m12_sketch", claimId: "hard", data: { problemId: "hard", attemptId: "b", submission: sha256Hex(SKETCH), names: [], healthy: true, repairOf: "a", registered: false, holes: [] } },
+      // A hole's local redraft (DP7): not the problem's last sketch.
+      { kind: "m12_sketch", claimId: "hard", data: { problemId: "hard", attemptId: "aux_one@00000c:draft", submission: sha256Hex("{}"), names: [], healthy: false, problem: "the draft proof has errors Lean reports", planner: true, fromInformal: true, redraftOf: "c", registered: true, holes: [] } },
       { kind: "m12_session", claimId: "hard", data: { problemId: "hard", taskId: "t", claimId: "c", session: 1, ok: false, usd: 0.1, reasons: [], verdict: "too_hard" } },
       { kind: "informal_proof", claimId: "hard", data: { problemId: "hard", accepted: false, passes: 0, required: 2, rounds: 3, verdicts: ["incorrect", "gap"], models: { planner: "faux/p", verifier: "faux/v" }, stop: "rounds", facts: [], hits: [] } },
       { kind: "hygiene", claimId: "hard", data: { check: "plausible", result: "no_counterexample" } },
@@ -98,6 +100,7 @@ describe("harness audit", () => {
     assert.match(text, /^# Audit/);
     assert.match(text, /Problems: 2, certified: 1, not certified: 1/);
     assert.match(text, /^## Output tokens by role and kind$/m);
+    assert.match(text, /^## Exploration moves$/m);
     assert.match(text, /\| Role \| Calls \| Output tokens \| Thinking \| Text \| Tool-call arguments \| Prose share \| Split covers \|/);
     assert.match(text, /^## `hard` \(unsolved\)/m);
     assert.match(text, /lean_search x2, lean_check x1/);
@@ -108,6 +111,27 @@ describe("harness audit", () => {
     assert.doesNotMatch(text, /^## `easy`/m, "a certified problem has no dossier, only a row in the length table");
     assert.equal(readFileSync(join(dir, "journal.jsonl"), "utf8"), before);
     assert.ok(lines.some((l) => l.includes("audit.md")));
+  });
+
+  it("counts the exploration moves of the run's problems, journaled by the router or computed from the statement (plan change CX1)", () => {
+    const { run } = build();
+    const extra = [
+      { type: "node.recorded", data: { nodeId: "n_moves", kind: "battery_run", claimId: run.claims.hard, data: { statement: "s", domains: ["general"], moves: ["E2", "E9"], tries: [], cpuMs: 0, budgetSec: 1 } } },
+      { type: "claim.created", data: { claimId: "c_poly", statementId: "sid_poly", statement: "(x y : ℝ) : 2 * x * y ≤ x ^ 2 + y ^ 2", origin: "bench:scripted", status: "open", kind: "formal" } },
+      { type: "problem.registered", data: { problemId: "poly", claimId: "c_poly", target: "poly", source: { repo: "r", rev: "x", path: "Bench.lean" }, domain: [] } },
+    ] as unknown as HarnessEvent[];
+    const a = audit({ events: [...run.events, ...extra] });
+    assert.deepEqual(a.moves.problems.map((p) => [p.problemId, p.moves, p.from, p.certified]), [
+      ["easy", [], "statement", true],
+      ["hard", ["E2", "E9"], "journal", false],
+      ["poly", ["E3", "E6"], "statement", false],
+    ]);
+    assert.deepEqual(a.moves.counts.filter((c) => c.problems > 0).map((c) => [c.move, c.problems, c.certified]), [["E2", 1, 0], ["E3", 1, 0], ["E6", 1, 0], ["E9", 1, 0]]);
+    assert.equal(a.moves.counts.length, 12);
+    const text = renderAudit(a, "Audit").join("\n");
+    assert.match(text, /1 journaled by M10's router, 2 computed now from the statement, 0 with no statement/);
+    assert.match(text, /^\| E6 \| a certificate of a bound or an impossibility \| 1 \| 0 \|$/m);
+    assert.match(text, /^\| E12 \| growth or asymptotics \| 0 \| 0 \|$/m);
   });
 
   it("writes one section per arm of an ablation directory", () => {

@@ -123,6 +123,23 @@ A file with holes is never valid: its report has `holes: true` and the reason
 file without holes, both policies run the same checks and give the same verdict. `hasHoles` tells
 whether a submission's regions hold `sorry` or `admit`.
 
+**Scratch commands (owner, 2026-11-24).** `SCRATCH_POLICY` is `SKETCH_POLICY` with `scratch` on: the aux region
+may also hold `#check <term>` and `example ... := ...`, which add no constant, so that a session can look at a
+term or try a tactic on a side goal in its working file. Every other rule holds inside them (the forbidden
+tokens, `#eval` among them). A file that holds one, under any policy, is a sketch: `holes: true`, the reason
+`the file holds scratch commands (#check, example): remove them for the work to count`, never valid, so it
+makes no candidate and is never certified, and M12's `readWork` does not count it as done. `hasScratch` finds
+one as the holes are found, as a token of either region outside comments: behind an `open X in` or `set_option
+a b in` prefix, or indented where no command of the aux region starts, it is found too, and a name such as
+`aux_example` is none (`#check_failure` counts, and the structural checks refuse it under every policy).
+Only the checks of a hole session use `SCRATCH_POLICY`: `runHoleSession` passes `scratch: true` to `Workbench.check` for each of the session's
+checks (`lean_check`, `lean_edit`), and the policy of the claim's workbench stays `SKETCH_POLICY`.
+Every other check keeps its policy: `validate` of any claim (a sub-claim, a negation, a link lemma, on any line),
+M12's `checkSketch` and `closeSorries` on a claim's small file, a prover's checks on the problem's file, and the
+certifier.
+Why: on run 7, 25 of the 283 checks of hole sessions were refused before Lean ran, most for a `#check` or an
+`example` in aux (VL1).
+
 ## Structural checks
 
 Both regions are scanned with comments blanked, where Lean is sure to read one (the strict reading,
