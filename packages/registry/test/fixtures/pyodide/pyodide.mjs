@@ -28,6 +28,9 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 
 export async function loadPyodide(options) {
+  // As Pyodide's Emscripten file system does while it loads (NODEFS's staticInit): the open flags from Node's bindings.
+  const flags = process.binding("constants")["fs"];
+  if (typeof flags?.O_APPEND !== "number") throw new Error("process.binding(\"constants\").fs has no O_APPEND");
   const versionFile = join(here, "fake-version.txt");
   const version = existsSync(versionFile) ? readFileSync(versionFile, "utf8").trim() : "314.0.7";
   let stdout = options.stdout ?? (() => {});

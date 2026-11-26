@@ -18,6 +18,7 @@
  * the process ends itself when its parent is gone (`orphanWatch`). This guards against the mistakes of code a model
  * wrote, not against code written to escape (documentation/compute.md, "What isolates it").
  */
+import { constants as fsConstants } from "node:fs";
 import { registerHooks } from "node:module";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
@@ -98,6 +99,20 @@ const SEALED_MODULES: readonly string[] = [
 const SEALED_PROCESS: readonly string[] = ["getBuiltinModule", "binding", "_linkedBinding", "dlopen", "kill", "_kill", "execve"];
 
 /**
+ * Node's permission model refuses `process.binding` from the start, and Pyodide's Emscripten file system calls
+ * `process.binding("constants").fs` once while it loads (NODEFS's `staticInit`, for the open flags). Before Pyodide
+ * loads, `process.binding` answers that one name with the same flags as `node:fs`'s `constants` and refuses every
+ * other; `seal` then replaces it with a refusal for good.
+ */
+function constantsBinding(): void {
+  const binding = (name: string): unknown => {
+    if (name === "constants") return { fs: { ...fsConstants } };
+    throw new Error(`process.binding(${JSON.stringify(name)}) is not available in this sandbox`);
+  };
+  Object.defineProperty(process, "binding", { value: binding, writable: false, configurable: true, enumerable: false });
+}
+
+/**
  * Seals the process before Python runs: Node 22's permission model does not restrict the network, and JavaScript that
  * Python reaches (through a JavaScript object of Pyodide's, `[].constructor.constructor("return process")()`) could
  * otherwise import `node:net`. The loader refuses `SEALED_MODULES` from now on (`import()` included), the members of
@@ -153,6 +168,7 @@ async function start(setup: Setup): Promise<{ pyodide: Pyodide; printed: { text:
     if (printed.text.length < setup.maxStdout) printed.text += text.endsWith("\n") ? text : `${text}\n`;
   };
   const { loadPyodide } = (await import(pathToFileURL(setup.loader).href)) as { loadPyodide: LoadPyodide };
+  constantsBinding();
   const pyodide = await loadPyodide({
     indexURL: setup.indexURL.endsWith("/") ? setup.indexURL : `${setup.indexURL}/`,
     // Packages come from the local copy only: one that is not there is an error, never a download.
